@@ -86,6 +86,7 @@ class ScreenShare(commands.Cog):
         
         await interaction.followup.send(embed=embed, ephemeral=True)
     
+    
     @app_commands.command(
         name="screen_share_off",
         description="Stop screen sharing session"
@@ -122,14 +123,30 @@ class ScreenShare(commands.Cog):
             
             # Get session details
             session = await ScreenShareModel.get_session_by_id(session_id)
+
+            channel = self.bot.get_channel(Config.VOICE_CHANNEL_ID)
             
-            embed = discord.Embed(
+            # Send instructions
+            await self.send_screen_share_off_instructions(interaction, channel,session_id, session,reason)
+        
+            
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ An error occurred: {str(e)}",
+                ephemeral=True
+            )
+
+    async def send_screen_share_off_instructions(self, interaction: discord.Interaction, 
+                                               channel: discord.VoiceChannel,session_id, session,reason:str):
+        """Send screen share OFF instructions to the user"""
+        
+        embed = discord.Embed(
                 title="🛑 Screen Share Stopped",
                 description="Your session has been ended",
                 color=discord.Color.red()
             )
-            
-            embed.add_field(
+
+        embed.add_field(
                 name="📊 Session Summary",
                 value=(
                     f"**Duration:** {session['duration_minutes']} minutes\n"
@@ -138,14 +155,21 @@ class ScreenShare(commands.Cog):
                 ),
                 inline=False
             )
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            
-        except Exception as e:
-            await interaction.followup.send(
-                f"❌ An error occurred: {str(e)}",
-                ephemeral=True
-            )
+        
+        embed.add_field(
+            name="📋 Follow These Steps:",
+            value=(
+                "**1️⃣ Disconnect from Voice Channel**\n"
+                f"   → Click on {channel.mention} to join\n\n"
+                "**2️⃣ Stop Screen Share**\n"
+                "   → Look at the bottom left of Discord\n"
+                "   → Click the **'Disconnect'** button (phone icon)\n\n"
+               
+            ),
+            inline=False
+        )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
     
     @app_commands.command(
         name="screen_share_status",
