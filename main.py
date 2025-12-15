@@ -31,6 +31,7 @@ class CustomBot(commands.Bot):
         await self.load_extension('cogs.user_management')
         await self.load_extension('cogs.screen_share')
         await self.load_extension('cogs.compliance')
+        await self.load_extension('cogs.time_tracking')
         
         # Sync commands to guild
         guild = discord.Object(id=Config.GUILD_ID)

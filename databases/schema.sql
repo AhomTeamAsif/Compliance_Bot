@@ -5,6 +5,54 @@ CREATE TABLE IF NOT EXISTS roles (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Time tracking tables
+CREATE TABLE IF NOT EXISTS time_tracking (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    starting_time TIMESTAMP NOT NULL,
+    end_of_the_day TIMESTAMP,
+    present_date DATE NOT NULL,
+    clock_in TIMESTAMP[],
+    clock_out TIMESTAMP[],
+    clockin_reason TEXT[],
+    clockout_reason TEXT[],
+    time_logged_in INTEGER DEFAULT 0,
+    break_duration INTEGER DEFAULT 0,
+    break_counter INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT fk_user_time_tracking FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+-- Late arrival tracking
+CREATE TABLE IF NOT EXISTS late_reasons (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    time_tracking_id INTEGER NOT NULL REFERENCES time_tracking(id) ON DELETE CASCADE,
+    late_mins INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    is_admin_informed BOOLEAN DEFAULT FALSE,
+    morning_meeting_attended BOOLEAN DEFAULT FALSE,
+    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT fk_user_late FOREIGN KEY (user_id) REFERENCES users(user_id),
+    CONSTRAINT fk_time_tracking_late FOREIGN KEY (time_tracking_id) REFERENCES time_tracking(id)
+);
+
+-- Daily work plan tracking
+CREATE TABLE IF NOT EXISTS work_updates (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    time_tracking_id INTEGER NOT NULL REFERENCES time_tracking(id) ON DELETE CASCADE,
+    start_of_the_day_plan TEXT[],
+    desklog_on BOOLEAN DEFAULT FALSE,
+    trackabi_on BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT fk_user_work_update FOREIGN KEY (user_id) REFERENCES users(user_id),
+    CONSTRAINT fk_time_tracking_work FOREIGN KEY (time_tracking_id) REFERENCES time_tracking(id)
+);
+
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
     user_id SERIAL PRIMARY KEY,
@@ -74,3 +122,7 @@ CREATE INDEX IF NOT EXISTS idx_screen_share_user_id ON screen_share_sessions(use
 CREATE INDEX IF NOT EXISTS idx_screen_share_on_time ON screen_share_sessions(screen_share_on_time);
 CREATE INDEX IF NOT EXISTS idx_daily_compliance_user ON daily_compliance(user_id);
 CREATE INDEX IF NOT EXISTS idx_daily_compliance_date ON daily_compliance(recorded_at);
+CREATE INDEX IF NOT EXISTS idx_time_tracking_user_date ON time_tracking(user_id, present_date);
+CREATE INDEX IF NOT EXISTS idx_time_tracking_date ON time_tracking(present_date);
+CREATE INDEX IF NOT EXISTS idx_late_reasons_user ON late_reasons(user_id);
+CREATE INDEX IF NOT EXISTS idx_work_updates_user ON work_updates(user_id);
