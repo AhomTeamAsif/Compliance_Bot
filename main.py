@@ -30,6 +30,7 @@ class CustomBot(commands.Bot):
         # Load screen share cog
         await self.load_extension('cogs.user_management')
         await self.load_extension('cogs.screen_share')
+        await self.load_extension('cogs.compliance')
         
         # Sync commands to guild
         guild = discord.Object(id=Config.GUILD_ID)
