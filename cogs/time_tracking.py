@@ -312,7 +312,7 @@ class TimeTracking(commands.Cog):
         # On time - create record
         time_tracking_id = await TimeTrackingModel.create_time_tracking(
             user_id=user_id,
-            starting_time=utc_time,
+            starting_time=utc_time_no_tz,
             present_date=present_date,
             clock_in_time=utc_time_no_tz,
             reason=reason
@@ -532,7 +532,7 @@ class TimeTracking(commands.Cog):
             # Create time tracking record
             time_tracking_id = await TimeTrackingModel.create_time_tracking(
                 user_id=data['user_id'],
-                starting_time=data['utc_time'],
+                starting_time=data['utc_time_no_tz'],
                 present_date=data['present_date'],
                 clock_in_time=data['utc_time_no_tz'],
                 reason=data['reason']
