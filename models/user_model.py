@@ -7,7 +7,7 @@ class UserModel:
     @staticmethod
     async def user_registration(discord_id: int, name: str, department: str = None, 
                                position: str = None, trackabi_id: str = None, 
-                               desklog_id: str = None, role_id: int = None):
+                               desklog_id: str = None, role_id: int = None,pending_leaves: int = None,contract_started_at: datetime = None):
         """Register a new user with all details"""
         async with db.pool.acquire() as conn:
             # Check if user already exists
@@ -19,10 +19,12 @@ class UserModel:
                 raise ValueError("User already registered")
             
             user_id = await conn.fetchval('''
-                INSERT INTO users (discord_id, name, department, position, trackabi_id, desklog_id, role_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO users (discord_id, name, department, position, trackabi_id, 
+                                  desklog_id, role_id, pending_leaves, contract_started_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING user_id
-            ''', discord_id, name, department, position, trackabi_id, desklog_id, role_id)
+            ''', discord_id, name, department, position, trackabi_id, desklog_id, 
+                 role_id, pending_leaves, contract_started_at)  
             
             return user_id
     
@@ -72,15 +74,6 @@ class UserModel:
         async with db.pool.acquire() as conn:
             user = await conn.fetchrow(
                 'SELECT * FROM users WHERE discord_id = $1', discord_id
-            )
-            return user
-    
-    @staticmethod
-    async def get_user_by_id(user_id: int):
-        """Get user by user_id"""
-        async with db.pool.acquire() as conn:
-            user = await conn.fetchrow(
-                'SELECT * FROM users WHERE user_id = $1', user_id
             )
             return user
     
