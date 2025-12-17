@@ -472,7 +472,7 @@ class TimeTracking(commands.Cog):
                 )
             else:
                 # End of the day
-                await TimeTrackingModel.end_day(record_id, utc_time)
+                await TimeTrackingModel.end_day(record_id, utc_time_no_tz)
                 
                 required_minutes = 480  # 8 hours
                 if int(total_logged_minutes) < required_minutes:
@@ -511,9 +511,10 @@ class TimeTracking(commands.Cog):
     )
     @app_commands.describe(
         admin_informed="Did you inform admin? (yes/no)",
+        morning_meeting="Did you joined the morning meeting? (yes/no)",
         reason="Reason for being late"
     )
-    async def late_reason(self, interaction: discord.Interaction, admin_informed: str, reason: str):
+    async def late_reason(self, interaction: discord.Interaction, admin_informed: str,morning_meeting:str, reason: str):
         """Submit late reason after being flagged as late"""
         
         await interaction.response.defer(ephemeral=True)
@@ -528,6 +529,7 @@ class TimeTracking(commands.Cog):
             
             data = self.pending_late_clockins[interaction.user.id]
             is_admin_informed = admin_informed.lower() in ['yes', 'y']
+            morning_meeting_attended=morning_meeting.lower() in ['yes', 'y']
             
             # Create time tracking record
             time_tracking_id = await TimeTrackingModel.create_time_tracking(
@@ -544,7 +546,8 @@ class TimeTracking(commands.Cog):
                 time_tracking_id=time_tracking_id,
                 late_mins=data['late_minutes'],
                 reason=reason,
-                is_admin_informed=is_admin_informed
+                is_admin_informed=is_admin_informed,
+                morning_meeting_attended=morning_meeting_attended
             )
             
             # Remove from pending
@@ -556,6 +559,7 @@ class TimeTracking(commands.Cog):
                 f"**Late by:** {data['late_minutes']} minutes\n"
                 f"**Reason:** {reason}\n"
                 f"**Admin Informed:** {'Yes' if is_admin_informed else 'No'}",
+                f"**Morning Meeting Attended:** {'Yes' if morning_meeting_attended else 'No'}",
                 ephemeral=True
             )
             

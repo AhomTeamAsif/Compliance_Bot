@@ -125,9 +125,9 @@ class LateReasonModel:
                     user_id, time_tracking_id, late_mins, 
                     reason, is_admin_informed, morning_meeting_attended
                 )
-                VALUES ($1, $2, $3, $4, $5, FALSE)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING id
-            ''', user_id, time_tracking_id, late_mins, reason, is_admin_informed)
+            ''', user_id, time_tracking_id, late_mins, reason, is_admin_informed,morning_meeting_attended)
             return late_id
     
     @staticmethod
@@ -142,6 +142,40 @@ class LateReasonModel:
                 LIMIT $2
             ''', user_id, limit)
             return [dict(row) for row in rows]
+
+    @staticmethod
+    async def get_late_users_list(limit: int = 10) -> List[Dict[str, Any]]:
+        """Get all users who were late today"""
+        async with db.pool.acquire() as conn:
+            rows = await conn.fetch('''
+                SELECT 
+                    lr.id,
+                    lr.user_id,
+                    u.name,
+                    lr.late_mins,
+                    lr.reason,
+                    lr.is_admin_informed,
+                    lr.morning_meeting_attended,
+                    lr.admin_approval,
+                    lr.recorded_at,
+                    lr.time_tracking_id
+                FROM late_reasons lr
+                JOIN users u ON lr.user_id = u.user_id
+                WHERE DATE(lr.recorded_at) = CURRENT_DATE
+                ORDER BY lr.recorded_at DESC
+                LIMIT $1
+            ''', limit)
+            return [dict(row) for row in rows]
+
+    @staticmethod
+    async def update_admin_approval(late_reason_id: int, admin_approval: bool):
+        """Update admin approval status for a late reason"""
+        async with db.pool.acquire() as conn:
+            await conn.execute('''
+                UPDATE late_reasons
+                SET admin_approval = $1
+                WHERE id = $2
+            ''', admin_approval, late_reason_id)
 
 
 class WorkUpdateModel:
