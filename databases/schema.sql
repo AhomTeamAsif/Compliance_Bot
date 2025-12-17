@@ -5,6 +5,32 @@ CREATE TABLE IF NOT EXISTS roles (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+--insert roles
+INSERT INTO roles (role_name) 
+VALUES 
+    ('SUPER'), 
+    ('ADMIN'), 
+    ('NORMAL')
+ON CONFLICT (role_name) DO NOTHING;
+
+-- Users table
+
+CREATE TABLE IF NOT EXISTS users (
+    user_id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    department VARCHAR(100),
+    position VARCHAR(100),
+    discord_id BIGINT,
+    trackabi_id VARCHAR(100),
+    desklog_id VARCHAR(100),
+    role_id INTEGER REFERENCES roles(role_id) ON DELETE SET NULL DEFAULT 3,
+    pending_leaves INTEGER DEFAULT 10,
+    contract_started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
 -- Time tracking tables
 CREATE TABLE IF NOT EXISTS time_tracking (
     id SERIAL PRIMARY KEY,
@@ -34,6 +60,7 @@ CREATE TABLE IF NOT EXISTS late_reasons (
     is_admin_informed BOOLEAN DEFAULT FALSE,
     morning_meeting_attended BOOLEAN DEFAULT FALSE,
     recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    admin_approval BOOLEAN DEFAULT FALSE,
     
     CONSTRAINT fk_user_late FOREIGN KEY (user_id) REFERENCES users(user_id),
     CONSTRAINT fk_time_tracking_late FOREIGN KEY (time_tracking_id) REFERENCES time_tracking(id)
@@ -48,23 +75,10 @@ CREATE TABLE IF NOT EXISTS work_updates (
     desklog_on BOOLEAN DEFAULT FALSE,
     trackabi_on BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    admin_approval BOOLEAN DEFAULT FALSE,
     
     CONSTRAINT fk_user_work_update FOREIGN KEY (user_id) REFERENCES users(user_id),
     CONSTRAINT fk_time_tracking_work FOREIGN KEY (time_tracking_id) REFERENCES time_tracking(id)
-);
-
--- Users table
-CREATE TABLE IF NOT EXISTS users (
-    user_id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    discord_id BIGINT NOT NULL UNIQUE,
-    department VARCHAR(100),
-    position VARCHAR(100),
-    trackabi_id VARCHAR(100),
-    desklog_id VARCHAR(100),
-    role_id INTEGER REFERENCES roles(role_id) ON DELETE SET NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Screen Share Sessions table
@@ -114,6 +128,7 @@ CREATE TABLE IF NOT EXISTS daily_compliance (
     
     CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
+
 
 
 -- Indexes for better query performance
