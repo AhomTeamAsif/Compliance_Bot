@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS roles (
     role_id SERIAL PRIMARY KEY,
     role_name VARCHAR(100) NOT NULL UNIQUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
 );
 
 --insert roles
@@ -25,11 +25,49 @@ CREATE TABLE IF NOT EXISTS users (
     desklog_id VARCHAR(100),
     role_id INTEGER REFERENCES roles(role_id) ON DELETE SET NULL DEFAULT 3,
     pending_leaves INTEGER DEFAULT 10,
-    contract_started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    is_deleted BOOLEAN DEFAULT FALSE,
+    contract_started_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
+    created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
+    updated_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
 );
 
+-- User delete log table
+CREATE TABLE IF NOT EXISTS user_delete_logs (
+    id SERIAL PRIMARY KEY,
+    deleted_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    deleted_by_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    reason TEXT,
+    deleted_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
+);
+
+-- Permissions table
+CREATE TABLE IF NOT EXISTS permissions (
+    permission_id SERIAL PRIMARY KEY,
+    permission_name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
+);
+
+-- Insert predefined permissions
+INSERT INTO permissions (permission_name, description) 
+VALUES 
+    ('user_register', 'Register new users'),
+    ('user_update', 'Update user information'),
+    ('user_delete', 'Delete users'),
+    ('discipline_compliance', 'Manage discipline and compliance'),
+    ('view_reports', 'View system reports'),
+    ('manage_permissions', 'Manage user permissions')
+ON CONFLICT (permission_name) DO NOTHING;
+
+-- User-permissions junction table (individual user permissions)
+CREATE TABLE IF NOT EXISTS user_permissions (
+    user_permission_id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    permission_id INTEGER REFERENCES permissions(permission_id) ON DELETE CASCADE,
+    granted_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
+    granted_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    UNIQUE(user_id, permission_id)
+);
 
 -- Time tracking tables
 CREATE TABLE IF NOT EXISTS time_tracking (
@@ -45,8 +83,8 @@ CREATE TABLE IF NOT EXISTS time_tracking (
     time_logged_in INTEGER DEFAULT 0,
     break_duration INTEGER DEFAULT 0,
     break_counter INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
+    created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
+
     CONSTRAINT fk_user_time_tracking FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
 
@@ -59,7 +97,7 @@ CREATE TABLE IF NOT EXISTS late_reasons (
     reason TEXT NOT NULL,
     is_admin_informed BOOLEAN DEFAULT FALSE,
     morning_meeting_attended BOOLEAN DEFAULT FALSE,
-    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    recorded_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
     admin_approval BOOLEAN DEFAULT FALSE,
     
     CONSTRAINT fk_user_late FOREIGN KEY (user_id) REFERENCES users(user_id),
@@ -74,7 +112,7 @@ CREATE TABLE IF NOT EXISTS work_updates (
     start_of_the_day_plan TEXT[],
     desklog_on BOOLEAN DEFAULT FALSE,
     trackabi_on BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
     admin_approval BOOLEAN DEFAULT FALSE,
     
     CONSTRAINT fk_user_work_update FOREIGN KEY (user_id) REFERENCES users(user_id),
@@ -94,7 +132,7 @@ CREATE TABLE IF NOT EXISTS screen_share_sessions (
     is_screen_frozen BOOLEAN DEFAULT FALSE,
     not_shared_duration_minutes INTEGER DEFAULT 0,
     screen_frozen_duration_minutes INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
 );
 
 -- Daily compliance tracking table
@@ -124,7 +162,7 @@ CREATE TABLE IF NOT EXISTS daily_compliance (
     
     -- Metadata
     recorded_by_discord_id BIGINT NOT NULL,
-    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    recorded_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
     
     CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
