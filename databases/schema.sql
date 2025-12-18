@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS user_delete_logs (
     deleted_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
     deleted_by_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
     reason TEXT,
+    seniors_informed BOOLEAN,
+    admins_informed BOOLEAN,
+    is_with_us BOOLEAN,
     deleted_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
 );
 
@@ -50,7 +53,8 @@ CREATE TABLE IF NOT EXISTS permissions (
 
 -- Insert predefined permissions
 INSERT INTO permissions (permission_name, description) 
-VALUES 
+VALUES
+    ('administer', 'Administrative privilages'),
     ('user_register', 'Register new users'),
     ('user_update', 'Update user information'),
     ('user_delete', 'Delete users'),
