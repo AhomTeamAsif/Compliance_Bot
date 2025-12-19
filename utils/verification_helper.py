@@ -1,6 +1,6 @@
 from utils.database import db
 
-# #TEST
+#TEST
 # async def check_user_permission(discord_id: int, permission_name: str):
 #     return True
 
