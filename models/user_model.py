@@ -9,7 +9,7 @@ class UserModel:
                                position: str = None, trackabi_id: str = None, 
                                desklog_id: str = None, role_id: int = None, 
                                pending_leaves: int = None, contract_started_at: datetime = None,
-                               permission_ids: list = None,granted_by:int= None):
+                               permission_ids: list = None,granted_by:int= None,registered_by: int = None):
         """Register a new user with all details and permissions"""
         async with db.pool.acquire() as conn:
             async with conn.transaction():
@@ -23,11 +23,11 @@ class UserModel:
                 
                 user_id = await conn.fetchval('''
                     INSERT INTO users (discord_id, name, department, position, trackabi_id, 
-                                      desklog_id, role_id, pending_leaves, contract_started_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                                      desklog_id, role_id, pending_leaves, contract_started_at, registered_by)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                     RETURNING user_id
                 ''', discord_id, name, department, position, trackabi_id, desklog_id, 
-                     role_id, pending_leaves, contract_started_at)
+                     role_id, pending_leaves, contract_started_at, registered_by)
                 
                 # Insert permissions if provided
                 if permission_ids:
@@ -199,3 +199,37 @@ class UserModel:
             ''', discord_id)
             
             return result != "UPDATE 0"
+
+    @staticmethod
+    async def get_delete_logs_count():
+        """Get total count of delete logs"""
+        async with db.pool.acquire() as conn:
+            count = await conn.fetchval('SELECT COUNT(*) FROM user_delete_logs')
+            return count
+
+    @staticmethod
+    async def get_delete_logs(limit: int = 15, offset: int = 0):
+        """Get user deletion logs with user information (paginated)"""
+        async with db.pool.acquire() as conn:
+            logs = await conn.fetch('''
+                SELECT 
+                    udl.id,
+                    udl.deleted_user_id,
+                    du.name as deleted_user_name,
+                    du.discord_id as deleted_user_discord_id,
+                    du.department as deleted_user_department,
+                    udl.deleted_by_user_id,
+                    dbu.name as deleted_by_name,
+                    dbu.discord_id as deleted_by_discord_id,
+                    udl.reason,
+                    udl.seniors_informed,
+                    udl.admins_informed,
+                    udl.is_with_us,
+                    udl.deleted_at
+                FROM user_delete_logs udl
+                LEFT JOIN users du ON udl.deleted_user_id = du.user_id
+                LEFT JOIN users dbu ON udl.deleted_by_user_id = dbu.user_id
+                ORDER BY udl.deleted_at DESC
+                LIMIT $1 OFFSET $2
+            ''', limit, offset)
+            return logs
