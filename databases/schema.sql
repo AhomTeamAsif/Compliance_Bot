@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
     role_id INTEGER REFERENCES roles(role_id) ON DELETE SET NULL DEFAULT 3,
     pending_leaves INTEGER DEFAULT 10,
     is_deleted BOOLEAN DEFAULT FALSE,
+    registered_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
     contract_started_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
     created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
     updated_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
@@ -58,9 +59,11 @@ VALUES
     ('user_register', 'Register new users'),
     ('user_update', 'Update user information'),
     ('user_delete', 'Delete users'),
-    ('discipline_compliance', 'Manage discipline and compliance'),
-    ('view_reports', 'View system reports'),
-    ('manage_permissions', 'Manage user permissions')
+    ('user_restore', 'Restore deleted users'),
+    ('user_info', 'Show user information'),
+    ('user_list', 'List all users in the system'),
+    ('user_delete_logs', 'View user deletion logs'),
+    ('none', 'No permissions')
 ON CONFLICT (permission_name) DO NOTHING;
 
 -- User-permissions junction table (individual user permissions)
@@ -175,6 +178,9 @@ CREATE TABLE IF NOT EXISTS daily_compliance (
 
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
+CREATE INDEX IF NOT EXISTS idx_users_registered_by ON users(registered_by);
+CREATE INDEX IF NOT EXISTS idx_user_delete_logs_deleted_user ON user_delete_logs(deleted_user_id);
+CREATE INDEX IF NOT EXISTS idx_user_delete_logs_deleted_by ON user_delete_logs(deleted_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_screen_share_user_id ON screen_share_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_screen_share_on_time ON screen_share_sessions(screen_share_on_time);
 CREATE INDEX IF NOT EXISTS idx_daily_compliance_user ON daily_compliance(user_id);

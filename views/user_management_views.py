@@ -288,7 +288,8 @@ class PermissionSelectView(discord.ui.View):
                     pending_leaves=self.pending_leaves,
                     contract_started_at=self.contract_started_at,
                     permission_ids=selected_permission_ids,
-                    granted_by=granter_user_id
+                    granted_by=granter_user_id,
+                    registered_by=granter_user_id 
                 )
                 
                 role_name = {1: "SUPER", 2: "ADMIN", 3: "NORMAL"}.get(self.role_id, "NORMAL")
@@ -864,4 +865,119 @@ class RestoreConfirmView(discord.ui.View):
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, emoji="❌")
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("❌ Restoration cancelled.", ephemeral=True)
+        self.stop()
+
+# ==================== DELETE LOGS PAGINATION ====================
+
+class DeleteLogsPaginationView(discord.ui.View):
+    def __init__(self, total_count: int, per_page: int = 15):
+        super().__init__(timeout=300)  # 5 minutes timeout
+        self.current_page = 1
+        self.per_page = per_page
+        self.total_count = total_count
+        self.total_pages = max(1, (total_count + per_page - 1) // per_page)  
+        
+        # Update button states
+        self.update_buttons()
+    
+    def update_buttons(self):
+        """Update button states based on current page"""
+        # Disable first/previous on first page
+        self.first_button.disabled = (self.current_page == 1)
+        self.prev_button.disabled = (self.current_page == 1)
+        
+        # Disable next/last on last page
+        self.next_button.disabled = (self.current_page >= self.total_pages)
+        self.last_button.disabled = (self.current_page >= self.total_pages)
+        
+        # Update page indicator button label
+        self.page_indicator.label = f"Page {self.current_page}/{self.total_pages}"
+    
+    async def fetch_and_display_logs(self, interaction: discord.Interaction):
+        """Fetch logs for current page and display them"""
+        offset = (self.current_page - 1) * self.per_page
+        logs = await UserModel.get_delete_logs(limit=self.per_page, offset=offset)
+        
+        if not logs:
+            await interaction.response.edit_message(
+                content="📋 No deletion logs found on this page!",
+                embed=None,
+                view=None
+            )
+            return
+        
+        embed = discord.Embed(
+            title=f"🗑️ User Deletion Logs",
+            description=f"**Total Logs:** {self.total_count} | **Page:** {self.current_page}/{self.total_pages}",
+            color=discord.Color.red(),
+            timestamp=datetime.now()
+        )
+        
+        for log in logs:
+            deleted_user_mention = f"<@{log['deleted_user_discord_id']}>" if log['deleted_user_discord_id'] else "Unknown"
+            deleted_by_mention = f"<@{log['deleted_by_discord_id']}>" if log['deleted_by_discord_id'] else "Unknown"
+            
+            field_value = (
+                f"**Deleted User:** {deleted_user_mention} ({log['deleted_user_name'] or 'N/A'})\n"
+                f"**Department:** {log['deleted_user_department'] or 'N/A'}\n"
+                f"**Deleted By:** {deleted_by_mention} ({log['deleted_by_name'] or 'N/A'})\n"
+                f"**Reason:** {log['reason'] or 'No reason provided'}\n"
+                f"**Seniors Informed:** {'✅ Yes' if log['seniors_informed'] else '❌ No'} | "
+                f"**Admins Informed:** {'✅ Yes' if log['admins_informed'] else '❌ No'} | "
+                f"**Is With Us:** {'✅ Yes' if log['is_with_us'] else '❌ No'}\n"
+                f"**Deleted At:** <t:{int(log['deleted_at'].timestamp())}:F>"
+            )
+            
+            embed.add_field(
+                name=f"Log ID: {log['id']} | User ID: {log['deleted_user_id'] or 'N/A'}",
+                value=field_value,
+                inline=False
+            )
+        
+        embed.set_footer(text=f"Showing logs {offset + 1}-{min(offset + len(logs), self.total_count)} of {self.total_count}")
+        
+        self.update_buttons()
+        
+        try:
+            await interaction.response.edit_message(embed=embed, view=self)
+        except discord.errors.InteractionResponded:
+            await interaction.edit_original_response(embed=embed, view=self)
+    
+    @discord.ui.button(label="⏮️ First", style=discord.ButtonStyle.secondary, row=0)
+    async def first_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page = 1
+        await self.fetch_and_display_logs(interaction)
+    
+    @discord.ui.button(label="◀️ Previous", style=discord.ButtonStyle.primary, row=0)
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page = max(1, self.current_page - 1)
+        await self.fetch_and_display_logs(interaction)
+    
+    @discord.ui.button(label="Page 1/1", style=discord.ButtonStyle.secondary, disabled=True, row=0)
+    async def page_indicator(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # This button is just for display, no action needed
+        await interaction.response.defer()
+    
+    @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.primary, row=0)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page = min(self.total_pages, self.current_page + 1)
+        await self.fetch_and_display_logs(interaction)
+    
+    @discord.ui.button(label="Last ⏭️", style=discord.ButtonStyle.secondary, row=0)
+    async def last_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page = self.total_pages
+        await self.fetch_and_display_logs(interaction)
+    
+    @discord.ui.button(label="🔄 Refresh", style=discord.ButtonStyle.success, row=1)
+    async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Refresh current page (useful for real-time updates)
+        await self.fetch_and_display_logs(interaction)
+    
+    @discord.ui.button(label="❌ Close", style=discord.ButtonStyle.danger, row=1)
+    async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(
+            content="✅ Delete logs viewer closed.",
+            embed=None,
+            view=None
+        )
         self.stop()
