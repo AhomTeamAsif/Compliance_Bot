@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS permissions (
 -- Insert predefined permissions
 INSERT INTO permissions (permission_name, description) 
 VALUES
-    ('administer', 'Administrative privilages'),
+    ('administer', 'Administrative privileges - Full system access'),
     ('user_register', 'Register new users'),
     ('user_update', 'Update user information'),
     ('user_delete', 'Delete users'),
@@ -63,7 +63,12 @@ VALUES
     ('user_info', 'Show user information'),
     ('user_list', 'List all users in the system'),
     ('user_delete_logs', 'View user deletion logs'),
-    ('none', 'No permissions')
+    ('activity_logs', 'View all activity logs'),
+    ('activity_logs_user', 'View activity logs for specific users'),
+    ('activity_logs_delete', 'Delete activity logs for users'),
+    ('screen_share', 'Access screen share tracking features'),
+    ('compliance', 'Access compliance management features'),
+    ('time_tracking', 'Access time tracking features')
 ON CONFLICT (permission_name) DO NOTHING;
 
 -- User-permissions junction table (individual user permissions)
