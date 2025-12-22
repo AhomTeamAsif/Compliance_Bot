@@ -76,6 +76,14 @@ CREATE TABLE IF NOT EXISTS user_permissions (
     UNIQUE(user_id, permission_id)
 );
 
+-- Activity Logs
+CREATE TABLE IF NOT EXISTS activity_logs(
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    slash_command_used VARCHAR(100),
+    created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
+);
+
 -- Time tracking tables
 CREATE TABLE IF NOT EXISTS time_tracking (
     id SERIAL PRIMARY KEY,
@@ -189,3 +197,4 @@ CREATE INDEX IF NOT EXISTS idx_time_tracking_user_date ON time_tracking(user_id,
 CREATE INDEX IF NOT EXISTS idx_time_tracking_date ON time_tracking(present_date);
 CREATE INDEX IF NOT EXISTS idx_late_reasons_user ON late_reasons(user_id);
 CREATE INDEX IF NOT EXISTS idx_work_updates_user ON work_updates(user_id);
+CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_logs(user_id);
