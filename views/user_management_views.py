@@ -281,6 +281,7 @@ class PermissionSelectView(discord.ui.View):
             try:
                 await UserModel.user_info_update(
                     discord_id=self.target_user.id,
+                    updated_by_user_id=granter_user_id,
                     name=self.name,
                     department=self.department,
                     position=self.position,
