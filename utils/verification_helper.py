@@ -1,47 +1,47 @@
 from utils.database import db
 
 # #TEST
-# async def check_user_permission(discord_id: int, permission_name: str):
-#     return True
-
 async def check_user_permission(discord_id: int, permission_name: str):
-    """Check if user has admin/super role first, then check specific permission"""
-    async with db.pool.acquire() as conn:
-        # First check if user is ADMIN or SUPER
-        user_role = await conn.fetchval('''
-            SELECT role_id FROM users 
-            WHERE discord_id = $1 AND is_deleted = FALSE
-        ''', discord_id)
+    return True
+
+# async def check_user_permission(discord_id: int, permission_name: str):
+#     """Check if user has admin/super role first, then check specific permission"""
+#     async with db.pool.acquire() as conn:
+#         # First check if user is ADMIN or SUPER
+#         user_role = await conn.fetchval('''
+#             SELECT role_id FROM users 
+#             WHERE discord_id = $1 AND is_deleted = FALSE
+#         ''', discord_id)
         
-        # If not ADMIN (2) or SUPER (1), deny
-        if user_role not in [1, 2]:
-            return False
+#         # If not ADMIN (2) or SUPER (1), deny
+#         if user_role not in [1, 2]:
+#             return False
         
-        # If SUPER (has administer permission), allow everything
-        has_administer = await conn.fetchval('''
-            SELECT EXISTS(
-                SELECT 1 FROM users u
-                JOIN user_permissions up ON u.user_id = up.user_id
-                JOIN permissions p ON up.permission_id = p.permission_id
-                WHERE u.discord_id = $1 AND p.permission_name = 'administer'
-            )
-        ''', discord_id)
+#         # If SUPER (has administer permission), allow everything
+#         has_administer = await conn.fetchval('''
+#             SELECT EXISTS(
+#                 SELECT 1 FROM users u
+#                 JOIN user_permissions up ON u.user_id = up.user_id
+#                 JOIN permissions p ON up.permission_id = p.permission_id
+#                 WHERE u.discord_id = $1 AND p.permission_name = 'administer'
+#             )
+#         ''', discord_id)
 
         
-        if has_administer:
-            return True
+#         if has_administer:
+#             return True
         
-        # For ADMIN, check specific permission
-        has_permission = await conn.fetchval('''
-            SELECT EXISTS(
-                SELECT 1 FROM users u
-                JOIN user_permissions up ON u.user_id = up.user_id
-                JOIN permissions p ON up.permission_id = p.permission_id
-                WHERE u.discord_id = $1 AND p.permission_name = $2
-            )
-        ''', discord_id, permission_name)
+#         # For ADMIN, check specific permission
+#         has_permission = await conn.fetchval('''
+#             SELECT EXISTS(
+#                 SELECT 1 FROM users u
+#                 JOIN user_permissions up ON u.user_id = up.user_id
+#                 JOIN permissions p ON up.permission_id = p.permission_id
+#                 WHERE u.discord_id = $1 AND p.permission_name = $2
+#             )
+#         ''', discord_id, permission_name)
         
-        return has_permission
+#         return has_permission
 
 
 async def get_all_permissions():
