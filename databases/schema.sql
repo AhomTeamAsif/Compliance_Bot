@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS permissions (
 -- Insert predefined permissions
 INSERT INTO permissions (permission_name, description) 
 VALUES
-    ('administer', 'Administrative privilages'),
+    ('administer', 'Administrative privileges - Full system access'),
     ('user_register', 'Register new users'),
     ('user_update', 'Update user information'),
     ('user_delete', 'Delete users'),
@@ -63,7 +63,12 @@ VALUES
     ('user_info', 'Show user information'),
     ('user_list', 'List all users in the system'),
     ('user_delete_logs', 'View user deletion logs'),
-    ('none', 'No permissions')
+    ('activity_logs', 'View all activity logs'),
+    ('activity_logs_user', 'View activity logs for specific users'),
+    ('activity_logs_delete', 'Delete activity logs for users'),
+    ('screen_share', 'Access screen share tracking features'),
+    ('compliance', 'Access compliance management features'),
+    ('time_tracking', 'Access time tracking features')
 ON CONFLICT (permission_name) DO NOTHING;
 
 -- User-permissions junction table (individual user permissions)
@@ -182,6 +187,31 @@ CREATE TABLE IF NOT EXISTS daily_compliance (
     CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
 
+-- User update log table
+CREATE TABLE IF NOT EXISTS user_update_logs(
+    id SERIAL PRIMARY KEY,
+    updated_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    updated_by_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    
+    -- Track which fields were updated
+    fields_updated TEXT[],
+    
+    -- Store old and new values as JSON
+    old_values JSONB,
+    new_values JSONB,
+    
+    -- Permission changes
+    permissions_added INTEGER[],
+    permissions_removed INTEGER[],
+    
+    -- Metadata
+    update_type VARCHAR(50),
+    change_summary TEXT,
+    
+    updated_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
+);
+
+
 
 
 -- Indexes for better query performance
@@ -198,3 +228,6 @@ CREATE INDEX IF NOT EXISTS idx_time_tracking_date ON time_tracking(present_date)
 CREATE INDEX IF NOT EXISTS idx_late_reasons_user ON late_reasons(user_id);
 CREATE INDEX IF NOT EXISTS idx_work_updates_user ON work_updates(user_id);
 CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_update_logs_updated_user ON user_update_logs(updated_user_id);
+CREATE INDEX IF NOT EXISTS idx_user_update_logs_updated_by ON user_update_logs(updated_by_user_id);
+CREATE INDEX IF NOT EXISTS idx_user_update_logs_date ON user_update_logs(updated_at);
