@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS time_tracking (
     time_logged_in INTEGER DEFAULT 0,
     break_duration INTEGER DEFAULT 0,
     break_counter INTEGER DEFAULT 0,
+    screen_share_verified BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
 
     CONSTRAINT fk_user_time_tracking FOREIGN KEY (user_id) REFERENCES users(user_id)
@@ -143,16 +144,20 @@ CREATE TABLE IF NOT EXISTS work_updates (
 CREATE TABLE IF NOT EXISTS screen_share_sessions (
     session_id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    time_tracking_id INTEGER REFERENCES time_tracking(id) ON DELETE CASCADE,
     screen_share_on_time TIMESTAMP NOT NULL,
     screen_share_on_reason TEXT,
     screen_share_off_time TIMESTAMP,
     screen_share_off_reason TEXT,
     duration_minutes INTEGER,
+    screen_share_verified BOOLEAN DEFAULT FALSE,
     is_screen_shared BOOLEAN DEFAULT FALSE,
     is_screen_frozen BOOLEAN DEFAULT FALSE,
     not_shared_duration_minutes INTEGER DEFAULT 0,
     screen_frozen_duration_minutes INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
+    created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
+
+    CONSTRAINT fk_time_tracking FOREIGN KEY (time_tracking_id) REFERENCES time_tracking(id) ON DELETE CASCADE
 );
 
 -- Daily compliance tracking table
@@ -231,3 +236,4 @@ CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_update_logs_updated_user ON user_update_logs(updated_user_id);
 CREATE INDEX IF NOT EXISTS idx_user_update_logs_updated_by ON user_update_logs(updated_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_user_update_logs_date ON user_update_logs(updated_at);
+CREATE INDEX IF NOT EXISTS idx_screen_share_time_tracking ON screen_share_sessions(time_tracking_id);

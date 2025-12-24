@@ -11,18 +11,19 @@ class TimeTrackingModel:
         starting_time: datetime,
         present_date: datetime.date,
         clock_in_time: datetime,
-        reason: str
+        reason: str,
+        screen_share_verified: bool = False
     ) -> int:
         """Create a new time tracking record for the day"""
         async with db.pool.acquire() as conn:
             tracking_id = await conn.fetchval('''
                 INSERT INTO time_tracking (
                     user_id, starting_time, present_date, 
-                    clock_in, clockin_reason, time_logged_in, break_duration
+                    clock_in, clockin_reason, time_logged_in, break_duration, screen_share_verified
                 )
-                VALUES ($1, $2, $3, $4, $5, 0, 0)
+                VALUES ($1, $2, $3, $4, $5, 0, 0,$6)
                 RETURNING id
-            ''', user_id, starting_time, present_date, [clock_in_time], [reason])
+            ''', user_id, starting_time, present_date, [clock_in_time], [reason],screen_share_verified)
             return tracking_id
     
     @staticmethod
@@ -31,11 +32,23 @@ class TimeTrackingModel:
         async with db.pool.acquire() as conn:
             row = await conn.fetchrow('''
                 SELECT id, clock_in, clock_out, starting_time, end_of_the_day, 
-                       break_duration, time_logged_in, break_counter
+                       break_duration, time_logged_in, break_counter, screen_share_verified
                 FROM time_tracking
                 WHERE user_id = $1 AND present_date = $2
+                ORDER BY created_at DESC
+                LIMIT 1
             ''', user_id, present_date)
             return dict(row) if row else None
+
+    @staticmethod
+    async def update_screen_share_verified(tracking_id: int, verified: bool = True):
+        """Update screen share verification status"""
+        async with db.pool.acquire() as conn:
+            await conn.execute('''
+                UPDATE time_tracking
+                SET screen_share_verified = $1
+                WHERE id = $2
+            ''', verified, tracking_id)
     
     @staticmethod
     async def add_clock_in(tracking_id: int, clock_in_time: datetime, reason: str, break_duration: int = None):
@@ -96,7 +109,7 @@ class TimeTrackingModel:
             rows = await conn.fetch('''
                 SELECT u.name, u.discord_id, tt.starting_time, 
                        tt.clock_in[ARRAY_LENGTH(tt.clock_in, 1)] as last_clock_in,
-                       tt.time_logged_in, tt.break_counter
+                       tt.time_logged_in, tt.break_counter, tt.screen_share_verified
                 FROM time_tracking tt
                 JOIN users u ON tt.user_id = u.user_id
                 WHERE tt.present_date = $1
@@ -106,109 +119,21 @@ class TimeTrackingModel:
             ''', present_date)
             return [dict(row) for row in rows]
 
-
-class LateReasonModel:
-    """Database operations for late_reasons table"""
-    
     @staticmethod
-    async def create_late_reason(
-        user_id: int,
-        time_tracking_id: int,
-        late_mins: int,
-        reason: str,
-        is_admin_informed: bool
-    ) -> int:
-        """Record a late arrival reason"""
-        async with db.pool.acquire() as conn:
-            late_id = await conn.fetchval('''
-                INSERT INTO late_reasons (
-                    user_id, time_tracking_id, late_mins, 
-                    reason, is_admin_informed, morning_meeting_attended
-                )
-                VALUES ($1, $2, $3, $4, $5, $6)
-                RETURNING id
-            ''', user_id, time_tracking_id, late_mins, reason, is_admin_informed,morning_meeting_attended)
-            return late_id
-    
-    @staticmethod
-    async def get_user_late_history(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get user's late arrival history"""
+    async def get_user_time_logs(user_id: int, limit: int = 30) -> List[Dict[str, Any]]:
+        """Get user's time tracking history"""
         async with db.pool.acquire() as conn:
             rows = await conn.fetch('''
-                SELECT id, late_mins, reason, is_admin_informed, recorded_at
-                FROM late_reasons
+                SELECT * FROM time_tracking
                 WHERE user_id = $1
-                ORDER BY recorded_at DESC
+                ORDER BY present_date DESC
                 LIMIT $2
             ''', user_id, limit)
             return [dict(row) for row in rows]
 
-    @staticmethod
-    async def get_late_users_list(limit: int = 10) -> List[Dict[str, Any]]:
-        """Get all users who were late today"""
-        async with db.pool.acquire() as conn:
-            rows = await conn.fetch('''
-                SELECT 
-                    lr.id,
-                    lr.user_id,
-                    u.name,
-                    lr.late_mins,
-                    lr.reason,
-                    lr.is_admin_informed,
-                    lr.morning_meeting_attended,
-                    lr.admin_approval,
-                    lr.recorded_at,
-                    lr.time_tracking_id
-                FROM late_reasons lr
-                JOIN users u ON lr.user_id = u.user_id
-                WHERE DATE(lr.recorded_at) = CURRENT_DATE
-                ORDER BY lr.recorded_at DESC
-                LIMIT $1
-            ''', limit)
-            return [dict(row) for row in rows]
-
-    @staticmethod
-    async def update_admin_approval(late_reason_id: int, admin_approval: bool):
-        """Update admin approval status for a late reason"""
-        async with db.pool.acquire() as conn:
-            await conn.execute('''
-                UPDATE late_reasons
-                SET admin_approval = $1
-                WHERE id = $2
-            ''', admin_approval, late_reason_id)
 
 
-class WorkUpdateModel:
-    """Database operations for work_updates table"""
-    
-    @staticmethod
-    async def create_work_update(
-        user_id: int,
-        time_tracking_id: int,
-        tasks: List[str],
-        desklog_on: bool,
-        trackabi_on: bool
-    ) -> int:
-        """Record daily work plan"""
-        async with db.pool.acquire() as conn:
-            update_id = await conn.fetchval('''
-                INSERT INTO work_updates (
-                    user_id, time_tracking_id, start_of_the_day_plan,
-                    desklog_on, trackabi_on
-                )
-                VALUES ($1, $2, $3, $4, $5)
-                RETURNING id
-            ''', user_id, time_tracking_id, tasks, desklog_on, trackabi_on)
-            return update_id
-    
-    @staticmethod
-    async def get_today_plan(user_id: int, time_tracking_id: int) -> Optional[Dict[str, Any]]:
-        """Get today's work plan for a user"""
-        async with db.pool.acquire() as conn:
-            row = await conn.fetchrow('''
-                SELECT id, start_of_the_day_plan, desklog_on, trackabi_on, created_at
-                FROM work_updates
-                WHERE user_id = $1 AND time_tracking_id = $2
-            ''', user_id, time_tracking_id)
-            return dict(row) if row else None
+
+
+
         
