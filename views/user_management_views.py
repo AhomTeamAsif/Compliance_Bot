@@ -214,6 +214,11 @@ class PermissionSelectView(discord.ui.View):
         self.pending_leaves = pending_leaves
         self.contract_started_at = contract_started_at
         self.is_update = is_update
+        self.selected_permissions = []
+        
+        # Pre-select existing permissions if updating
+        if existing_perms:
+            self.selected_permissions = [int(p) for p in existing_perms]
         
         # Create permission options
         options = [
@@ -230,24 +235,53 @@ class PermissionSelectView(discord.ui.View):
             placeholder="Select permissions (optional)",
             options=options,
             min_values=0,
-            max_values=len(options)
+            max_values=len(options),
+            row=0
         )
-        self.permission_select.callback = self.permission_callback
+        self.permission_select.callback = self.permission_dropdown_callback
         self.add_item(self.permission_select)
+        
+        # Add Submit Button
+        self.submit_button = discord.ui.Button(
+            label="✅ Submit & Complete",
+            style=discord.ButtonStyle.success,
+            row=1
+        )
+        self.submit_button.callback = self.submit_callback
+        self.add_item(self.submit_button)
+        
+        # Add Cancel Button
+        self.cancel_button = discord.ui.Button(
+            label="❌ Cancel",
+            style=discord.ButtonStyle.danger,
+            row=1
+        )
+        self.cancel_button.callback = self.cancel_callback
+        self.add_item(self.cancel_button)
     
-    async def permission_callback(self, interaction: discord.Interaction):
-        selected_permission_ids = [int(val) for val in self.permission_select.values]
-
+    async def permission_dropdown_callback(self, interaction: discord.Interaction):
+        """Handle permission selection changes"""
+        self.selected_permissions = [int(val) for val in self.permission_select.values]
+        
+        # Just acknowledge the selection, don't submit yet
+        await interaction.response.send_message(
+            f"✅ Selected {len(self.selected_permissions)} permission(s). Click **Submit & Complete** when ready.",
+            ephemeral=True,
+            delete_after=3
+        )
+    
+    async def submit_callback(self, interaction: discord.Interaction):
+        """Handle final submission"""
         # Get the granter's user_id from discord_id
         granter_user = await UserModel.get_user_by_discord_id(interaction.user.id)
         granter_user_id = granter_user['user_id'] if granter_user else None
-    
         
         if self.is_update:
             # Update user
             try:
                 await UserModel.user_info_update(
                     discord_id=self.target_user.id,
+                    updated_by_user_id=granter_user_id,
                     name=self.name,
                     department=self.department,
                     position=self.position,
@@ -255,7 +289,7 @@ class PermissionSelectView(discord.ui.View):
                     desklog_id=self.desklog_id,
                     role_id=self.role_id,
                     pending_leaves=self.pending_leaves,
-                    permission_ids=selected_permission_ids,
+                    permission_ids=self.selected_permissions,
                     granted_by=granter_user_id
                 )
                 
@@ -266,7 +300,7 @@ class PermissionSelectView(discord.ui.View):
                     timestamp=datetime.now()
                 )
                 embed.add_field(name="👤 Discord User", value=self.target_user.mention, inline=True)
-                embed.add_field(name="🔑 Permissions", value=f"{len(selected_permission_ids)} granted", inline=True)
+                embed.add_field(name="🔑 Permissions", value=f"{len(self.selected_permissions)} granted", inline=True)
                 embed.set_thumbnail(url=self.target_user.display_avatar.url)
                 embed.set_footer(text=f"Updated by {interaction.user.name}")
                 
@@ -287,9 +321,9 @@ class PermissionSelectView(discord.ui.View):
                     role_id=self.role_id,
                     pending_leaves=self.pending_leaves,
                     contract_started_at=self.contract_started_at,
-                    permission_ids=selected_permission_ids,
+                    permission_ids=self.selected_permissions,
                     granted_by=granter_user_id,
-                    registered_by=granter_user_id 
+                    registered_by=granter_user_id
                 )
                 
                 role_name = {1: "SUPER", 2: "ADMIN", 3: "NORMAL"}.get(self.role_id, "NORMAL")
@@ -309,7 +343,7 @@ class PermissionSelectView(discord.ui.View):
                 embed.add_field(name="👑 Role", value=role_name, inline=True)
                 embed.add_field(name="🗓️ Contract Start", value=self.contract_started_at.strftime('%Y-%m-%d'), inline=True)
                 embed.add_field(name="🏖️ Pending Leaves", value=f"{self.pending_leaves} days", inline=True)
-                embed.add_field(name="🔑 Permissions", value=f"{len(selected_permission_ids)} granted", inline=True)
+                embed.add_field(name="🔑 Permissions", value=f"{len(self.selected_permissions)} granted", inline=True)
                 embed.add_field(name="📊 Trackabi ID", value=f"`{self.trackabi_id}`", inline=True)
                 embed.add_field(name="🖥️ Desklog ID", value=f"`{self.desklog_id}`", inline=True)
                 
@@ -323,6 +357,15 @@ class PermissionSelectView(discord.ui.View):
             except Exception as e:
                 await interaction.response.send_message(f"❌ Registration failed: {str(e)}", ephemeral=True)
         
+        self.stop()
+
+    async def cancel_callback(self, interaction: discord.Interaction):
+        """Handle cancellation"""
+        action = "update" if self.is_update else "registration"
+        await interaction.response.send_message(
+            f"❌ User {action} cancelled.",
+            ephemeral=True
+        )
         self.stop()
 
 
