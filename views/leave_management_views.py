@@ -113,9 +113,39 @@ class PaidLeaveModal(discord.ui.Modal, title="Paid Leave Request"):
                     ephemeral=True
                 )
                 return
-            
-            # Show confirmation
+
+            # Calculate requested duration
             duration = (end - start).days + 1
+            if duration <= 0:
+                await interaction.response.send_message(
+                    "❌ Duration must be at least 1 day.",
+                    ephemeral=True
+                )
+                return
+
+            # Check user's remaining paid leaves
+            user = await UserModel.get_user_by_discord_id(interaction.user.id)
+            if not user:
+                await interaction.response.send_message(
+                    "❌ You are not registered in the system! Please contact an admin.",
+                    ephemeral=True
+                )
+                return
+
+            pending_leaves = user.get('pending_leaves', 0)
+            if pending_leaves is None:
+                pending_leaves = 0
+
+            if duration > pending_leaves:
+                await interaction.response.send_message(
+                    f"❌ You don't have enough paid leave balance.\n"
+                    f"Requested: **{duration}** day(s)\n"
+                    f"Available: **{pending_leaves}** day(s)",
+                    ephemeral=True
+                )
+                return
+
+            # Show confirmation
             view = ConfirmLeaveView("paid_leave", self.start_date.value, self.end_date.value, 
                                    None, self.reason.value, duration)
             
@@ -661,3 +691,218 @@ class ConfirmLeaveView(discord.ui.View):
             ephemeral=True
         )
         self.stop()
+
+
+class ReviewLeaveRequestsView(discord.ui.View):
+    """Admin view to approve or reject pending leave requests"""
+    def __init__(self, pending_requests, reviewer_discord_id: int):
+        super().__init__(timeout=300)
+        self.reviewer_discord_id = reviewer_discord_id
+        self.selected_request_id = None
+
+        options = []
+        leave_type_display = {
+            "paid_leave": "Paid",
+            "sick_leave": "Sick",
+            "half_day": "Half-Day",
+            "emergency_leave": "Emergency"
+        }
+
+        for req in pending_requests:
+            label = f"ID {req['leave_request_id']} • {leave_type_display.get(req['leave_type'], req['leave_type'])}"
+            description = f"{req['name']} • {req['start_date']} to {req['end_date']}"
+            options.append(discord.SelectOption(
+                label=label[:100],
+                value=str(req['leave_request_id']),
+                description=description[:100]
+            ))
+
+        self.leave_select = discord.ui.Select(
+            placeholder="Select a leave request",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
+        self.leave_select.callback = self.on_select
+        self.add_item(self.leave_select)
+
+    async def on_select(self, interaction: discord.Interaction):
+        if interaction.user.id != self.reviewer_discord_id:
+            await interaction.response.send_message(
+                "❌ Only the admin who opened this list can review requests.",
+                ephemeral=True
+            )
+            return
+
+        self.selected_request_id = int(self.leave_select.values[0])
+        await interaction.response.send_message(
+            f"ℹ️ Selected request **#{self.selected_request_id}**. Choose Approve or Reject.",
+            ephemeral=True
+        )
+
+    def _is_authorized(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == self.reviewer_discord_id
+
+    async def _ensure_selection(self, interaction: discord.Interaction) -> bool:
+        if not self.selected_request_id:
+            await interaction.response.send_message(
+                "❌ Please select a leave request first.",
+                ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="Approve", style=discord.ButtonStyle.success, emoji="✅")
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self._is_authorized(interaction):
+            await interaction.response.send_message(
+                "❌ Only the admin who opened this list can approve requests.",
+                ephemeral=True
+            )
+            return
+
+        if not await self._ensure_selection(interaction):
+            return
+
+        try:
+            admin_user = await UserModel.get_user_by_discord_id(interaction.user.id)
+            if not admin_user:
+                await interaction.response.send_message(
+                    "❌ Unable to find your admin record in the system.",
+                    ephemeral=True
+                )
+                return
+
+            request = await LeaveRequestModel.get_leave_request(self.selected_request_id)
+            if not request:
+                await interaction.response.send_message(
+                    "❌ Leave request not found. Try refreshing with the command again.",
+                    ephemeral=True
+                )
+                return
+
+            if request['status'] != 'pending':
+                await interaction.response.send_message(
+                    f"ℹ️ Request #{self.selected_request_id} is already {request['status']}.",
+                    ephemeral=True
+                )
+                return
+
+            success = await LeaveRequestModel.approve_leave_request(
+                self.selected_request_id,
+                admin_user['user_id']
+            )
+
+            if success:
+                if request['leave_type'] == 'paid_leave':
+                    start_date = request['start_date']
+                    end_date = request['end_date']
+                    if isinstance(start_date, datetime):
+                        start_date = start_date.date()
+                    if isinstance(end_date, datetime):
+                        end_date = end_date.date()
+                    duration_days = (end_date - start_date).days + 1
+                    await LeaveRequestModel.deduct_pending_leave(
+                        request['user_id'],
+                        max(duration_days, 1)
+                    )
+
+                await interaction.response.send_message(
+                    f"✅ Approved leave request #{self.selected_request_id}.",
+                    ephemeral=True
+                )
+                self.stop()
+            else:
+                await interaction.response.send_message(
+                    "❌ Failed to approve request. Please try again.",
+                    ephemeral=True
+                )
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Error approving request: {e}",
+                ephemeral=True
+            )
+
+    @discord.ui.button(label="Reject", style=discord.ButtonStyle.danger, emoji="🛑")
+    async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self._is_authorized(interaction):
+            await interaction.response.send_message(
+                "❌ Only the admin who opened this list can reject requests.",
+                ephemeral=True
+            )
+            return
+
+        if not await self._ensure_selection(interaction):
+            return
+
+        modal = RejectLeaveModal(self)
+        await interaction.response.send_modal(modal)
+
+
+class RejectLeaveModal(discord.ui.Modal, title="Reject Leave Request"):
+    """Modal to capture rejection reason"""
+    reason = discord.ui.TextInput(
+        label="Rejection Reason",
+        placeholder="Provide a short reason",
+        required=True,
+        max_length=200,
+        style=discord.TextStyle.paragraph
+    )
+
+    def __init__(self, parent_view: ReviewLeaveRequestsView):
+        super().__init__(timeout=180)
+        self.parent_view = parent_view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != self.parent_view.reviewer_discord_id:
+            await interaction.response.send_message(
+                "❌ Only the admin who opened this list can reject requests.",
+                ephemeral=True
+            )
+            return
+
+        request_id = self.parent_view.selected_request_id
+        if not request_id:
+            await interaction.response.send_message(
+                "❌ No request selected. Please select a request and try again.",
+                ephemeral=True
+            )
+            return
+
+        try:
+            request = await LeaveRequestModel.get_leave_request(request_id)
+            if not request:
+                await interaction.response.send_message(
+                    "❌ Leave request not found. Try refreshing with the command again.",
+                    ephemeral=True
+                )
+                return
+
+            if request['status'] != 'pending':
+                await interaction.response.send_message(
+                    f"ℹ️ Request #{request_id} is already {request['status']}.",
+                    ephemeral=True
+                )
+                return
+
+            success = await LeaveRequestModel.reject_leave_request(
+                request_id,
+                self.reason.value
+            )
+
+            if success:
+                await interaction.response.send_message(
+                    f"🛑 Rejected leave request #{request_id}.",
+                    ephemeral=True
+                )
+                self.parent_view.stop()
+            else:
+                await interaction.response.send_message(
+                    "❌ Failed to reject request. Please try again.",
+                    ephemeral=True
+                )
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Error rejecting request: {e}",
+                ephemeral=True
+            )

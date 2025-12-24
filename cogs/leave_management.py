@@ -5,7 +5,7 @@ from discord import app_commands
 from datetime import datetime
 from models.user_model import UserModel
 from models.leave_model import LeaveRequestModel
-from views.leave_management_views import LeaveTypeSelectView
+from views.leave_management_views import LeaveTypeSelectView, ReviewLeaveRequestsView
 from utils.verification_helper import check_user_permission
 
 
@@ -290,7 +290,8 @@ class LeaveManagement(commands.Cog):
                     inline=False
                 )
             
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            view = ReviewLeaveRequestsView(pending_requests, interaction.user.id)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         
         except Exception as e:
             await interaction.followup.send(

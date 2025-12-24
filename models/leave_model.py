@@ -197,20 +197,20 @@ class LeaveRequestModel:
             raise
     
     @staticmethod
-    async def deduct_pending_leave(user_id: int) -> bool:
-        """Deduct one day from pending leaves"""
+    async def deduct_pending_leave(user_id: int, days: int = 1) -> bool:
+        """Deduct a number of days from pending paid leaves (clamped at 0)"""
         try:
             query = """
             UPDATE users
             SET pending_leaves = CASE 
-                WHEN pending_leaves > 0 THEN pending_leaves - 1
+                WHEN pending_leaves > 0 THEN GREATEST(pending_leaves - $2, 0)
                 ELSE 0
             END
             WHERE user_id = $1
             """
             
             async with db.pool.acquire() as conn:
-                result = await conn.execute(query, user_id)
+                result = await conn.execute(query, user_id, days)
             
             return result == 'UPDATE 1'
         
