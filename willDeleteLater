@@ -1,0 +1,33 @@
+& "C:\Program Files\PostgreSQL\15\bin\psql.exe" -U postgres -h localhost -d discord_bot -c "
+DROP TABLE IF EXISTS user_delete_logs CASCADE;
+DROP TABLE IF EXISTS user_permissions CASCADE;
+DROP TABLE IF EXISTS daily_compliance CASCADE;
+DROP TABLE IF EXISTS late_reasons CASCADE;
+DROP TABLE IF EXISTS work_updates CASCADE;
+DROP TABLE IF EXISTS screen_share_sessions CASCADE;
+DROP TABLE IF EXISTS time_tracking CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS permissions CASCADE;
+DROP TABLE IF EXISTS roles CASCADE;
+DROP TABLE IF EXISTS activity_logs CASCADE;
+"
+
+
+
+
+Check the whole codebase and tell me what you have understood?
+
+following the coding structure in this project, I need to make some changes for sick leave like 
+if the user select "yes" for document, then, user will be shown to section to upload a 
+picture, otherwise user doesnt have to submit any doc. 
+medical document in the case of "sick leave" - I want something like a dropdown from where 
+user will select "yes" or "no". Based on the user selection, the upload image section will be
+ appeared. 
+Now for uploading doc:
+Option 1: Store files on Discord (Recommended - Easiest)
+
+User uploads file in Discord
+Bot saves file URL/message link to database
+Free, no external storage needed
+
+I want to follow these approach, change db if needed to.
