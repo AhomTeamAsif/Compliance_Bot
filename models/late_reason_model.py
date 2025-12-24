@@ -86,14 +86,15 @@ class LateReasonModel:
             return [dict(row) for row in rows]
 
     @staticmethod
-    async def update_admin_approval(late_reason_id: int, admin_approval: bool):
+    async def update_admin_approval(late_reason_id: int, admin_approval: bool) -> bool:
         """Update admin approval status for a late reason"""
         async with db.pool.acquire() as conn:
-            await conn.execute('''
+            result = await conn.execute('''
                 UPDATE late_reasons
                 SET admin_approval = $1
                 WHERE id = $2
             ''', admin_approval, late_reason_id)
+            return result != "UPDATE 0"
     
     @staticmethod
     async def get_late_reason_by_tracking_id(time_tracking_id: int) -> Dict[str, Any]:
@@ -103,4 +104,17 @@ class LateReasonModel:
                 SELECT * FROM late_reasons
                 WHERE time_tracking_id = $1
             ''', time_tracking_id)
+            return dict(row) if row else None
+
+    @staticmethod
+    async def get_late_reason_by_id(late_id: int) -> Dict[str, Any]:
+        """Get late reason by ID"""
+        async with db.pool.acquire() as conn:
+            row = await conn.fetchrow('''
+                SELECT lr.*, u.name, u.discord_id, tt.present_date
+                FROM late_reasons lr
+                JOIN users u ON lr.user_id = u.user_id
+                JOIN time_tracking tt ON lr.time_tracking_id = tt.id
+                WHERE lr.id = $1
+            ''', late_id)
             return dict(row) if row else None

@@ -130,6 +130,16 @@ class TimeTrackingModel:
                 LIMIT $2
             ''', user_id, limit)
             return [dict(row) for row in rows]
+    
+    @staticmethod
+    async def get_tracking_by_id(tracking_id: int) -> Optional[Dict[str, Any]]:
+        """Get time tracking by ID"""
+        async with db.pool.acquire() as conn:
+            row = await conn.fetchrow('''
+                SELECT * FROM time_tracking
+                WHERE id = $1
+            ''', tracking_id)
+            return dict(row) if row else None
 
 
 
