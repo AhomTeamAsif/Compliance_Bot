@@ -5,30 +5,27 @@ class ScreenShareModel:
     """Database operations for screen_share_sessions table"""
     
     @staticmethod
-    async def start_session(user_id: int, reason: str = None):
+    async def start_session(user_id: int,time_tracking_id:int, reason: str = None):
         """Start a new screen share session"""
         async with db.pool.acquire() as conn:
             session_id = await conn.fetchval('''
                 INSERT INTO screen_share_sessions 
-                (user_id, screen_share_on_time, screen_share_on_reason, is_screen_shared)
-                VALUES ($1, $2, $3, TRUE)
+                (user_id,time_tracking_id, screen_share_on_time, screen_share_on_reason, is_screen_shared)
+                VALUES ($1, $2, $3, $4, TRUE)
                 RETURNING session_id
-            ''', user_id, datetime.now(), reason)
+            ''', user_id,time_tracking_id, datetime.now(), reason)
             return session_id
     
     @staticmethod
-    async def end_session(user_id: int, reason: str = None):
+    async def end_session(session_id: int, reason: str = None):
         """End the active screen share session for a user"""
         async with db.pool.acquire() as conn:
             # Get the active session
             session = await conn.fetchrow('''
-                SELECT session_id, screen_share_on_time 
+                SELECT screen_share_on_time 
                 FROM screen_share_sessions
-                WHERE user_id = $1 
-                AND screen_share_off_time IS NULL
-                ORDER BY screen_share_on_time DESC
-                LIMIT 1
-            ''', user_id)
+                WHERE session_id = $1 
+            ''', session_id)
             
             if not session:
                 return None
@@ -45,12 +42,12 @@ class ScreenShareModel:
                     duration_minutes = $3,
                     is_screen_shared = FALSE
                 WHERE session_id = $4
-            ''', off_time, reason, duration, session['session_id'])
+            ''', off_time, reason, duration, session_id)
             
-            return session['session_id']
+            return session_id
     
     @staticmethod
-    async def get_active_session(user_id: int):
+    async def get_active_session_by_user(user_id: int):
         """Get user's active screen share session"""
         async with db.pool.acquire() as conn:
             session = await conn.fetchrow('''
@@ -61,6 +58,41 @@ class ScreenShareModel:
                 LIMIT 1
             ''', user_id)
             return session
+
+    @staticmethod
+    async def get_session_by_tracking_id(time_tracking_id: int):
+        """Get screen share session by time tracking ID"""
+        async with db.pool.acquire() as conn:
+            session = await conn.fetchrow('''
+                SELECT * FROM screen_share_sessions
+                WHERE time_tracking_id = $1
+                ORDER BY screen_share_on_time DESC
+                LIMIT 1
+            ''', time_tracking_id)
+            return session
+
+    @staticmethod
+    async def verify_and_start_session(user_id: int, time_tracking_id: int, reason: str = None):
+        """Verify user is streaming and start session"""
+        async with db.pool.acquire() as conn:
+            session_id = await conn.fetchval('''
+                INSERT INTO screen_share_sessions 
+                (user_id, time_tracking_id, screen_share_on_time, 
+                 screen_share_on_reason, is_screen_shared, screen_share_verified)
+                VALUES ($1, $2, $3, $4, TRUE, TRUE)
+                RETURNING session_id
+            ''', user_id, time_tracking_id, datetime.now(), reason)
+            return session_id
+    
+    @staticmethod
+    async def update_verified_status(session_id: int, verified: bool = True):
+        """Update screen share verified status"""
+        async with db.pool.acquire() as conn:
+            await conn.execute('''
+                UPDATE screen_share_sessions
+                SET screen_share_verified = $1
+                WHERE session_id = $2
+            ''', verified, session_id)
     
     @staticmethod
     async def get_all_active_sessions():
@@ -82,7 +114,7 @@ class ScreenShareModel:
             await conn.execute('''
                 UPDATE screen_share_sessions
                 SET is_screen_frozen = $1,
-                    screen_frozen_duration_minutes = screen_frozen_duration_minutes + $2
+                    screen_frozen_duration_minutes = COALESCE(screen_frozen_duration_minutes, 0) + $2
                 WHERE session_id = $3
             ''', is_frozen, frozen_duration, session_id)
     
@@ -92,7 +124,7 @@ class ScreenShareModel:
         async with db.pool.acquire() as conn:
             await conn.execute('''
                 UPDATE screen_share_sessions
-                SET not_shared_duration_minutes = not_shared_duration_minutes + $1
+                SET not_shared_duration_minutes = COALESCE(not_shared_duration_minutes, 0) + $1
                 WHERE session_id = $2
             ''', duration, session_id)
     

@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS permissions (
 -- Insert predefined permissions
 INSERT INTO permissions (permission_name, description) 
 VALUES
-    ('administer', 'Administrative privilages'),
+    ('administer', 'Administrative privileges - Full system access'),
     ('user_register', 'Register new users'),
     ('user_update', 'Update user information'),
     ('user_delete', 'Delete users'),
@@ -63,7 +63,12 @@ VALUES
     ('user_info', 'Show user information'),
     ('user_list', 'List all users in the system'),
     ('user_delete_logs', 'View user deletion logs'),
-    ('none', 'No permissions')
+    ('activity_logs', 'View all activity logs'),
+    ('activity_logs_user', 'View activity logs for specific users'),
+    ('activity_logs_delete', 'Delete activity logs for users'),
+    ('screen_share', 'Access screen share tracking features'),
+    ('compliance', 'Access compliance management features'),
+    ('time_tracking', 'Access time tracking features')
 ON CONFLICT (permission_name) DO NOTHING;
 
 -- User-permissions junction table (individual user permissions)
@@ -98,6 +103,7 @@ CREATE TABLE IF NOT EXISTS time_tracking (
     time_logged_in INTEGER DEFAULT 0,
     break_duration INTEGER DEFAULT 0,
     break_counter INTEGER DEFAULT 0,
+    screen_share_verified BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
 
     CONSTRAINT fk_user_time_tracking FOREIGN KEY (user_id) REFERENCES users(user_id)
@@ -138,16 +144,20 @@ CREATE TABLE IF NOT EXISTS work_updates (
 CREATE TABLE IF NOT EXISTS screen_share_sessions (
     session_id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    time_tracking_id INTEGER REFERENCES time_tracking(id) ON DELETE CASCADE,
     screen_share_on_time TIMESTAMP NOT NULL,
     screen_share_on_reason TEXT,
     screen_share_off_time TIMESTAMP,
     screen_share_off_reason TEXT,
     duration_minutes INTEGER,
+    screen_share_verified BOOLEAN DEFAULT FALSE,
     is_screen_shared BOOLEAN DEFAULT FALSE,
     is_screen_frozen BOOLEAN DEFAULT FALSE,
     not_shared_duration_minutes INTEGER DEFAULT 0,
     screen_frozen_duration_minutes INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
+    created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
+
+    CONSTRAINT fk_time_tracking FOREIGN KEY (time_tracking_id) REFERENCES time_tracking(id) ON DELETE CASCADE
 );
 
 -- Daily compliance tracking table
@@ -181,6 +191,31 @@ CREATE TABLE IF NOT EXISTS daily_compliance (
     
     CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
+
+-- User update log table
+CREATE TABLE IF NOT EXISTS user_update_logs(
+    id SERIAL PRIMARY KEY,
+    updated_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    updated_by_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    
+    -- Track which fields were updated
+    fields_updated TEXT[],
+    
+    -- Store old and new values as JSON
+    old_values JSONB,
+    new_values JSONB,
+    
+    -- Permission changes
+    permissions_added INTEGER[],
+    permissions_removed INTEGER[],
+    
+    -- Metadata
+    update_type VARCHAR(50),
+    change_summary TEXT,
+    
+    updated_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
+);
+
 
 
 
@@ -220,3 +255,7 @@ CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_leave_requests_user ON leave_requests(user_id);
 CREATE INDEX IF NOT EXISTS idx_leave_requests_status ON leave_requests(status);
 CREATE INDEX IF NOT EXISTS idx_leave_requests_date ON leave_requests(start_date);
+CREATE INDEX IF NOT EXISTS idx_user_update_logs_updated_user ON user_update_logs(updated_user_id);
+CREATE INDEX IF NOT EXISTS idx_user_update_logs_updated_by ON user_update_logs(updated_by_user_id);
+CREATE INDEX IF NOT EXISTS idx_user_update_logs_date ON user_update_logs(updated_at);
+CREATE INDEX IF NOT EXISTS idx_screen_share_time_tracking ON screen_share_sessions(time_tracking_id);
