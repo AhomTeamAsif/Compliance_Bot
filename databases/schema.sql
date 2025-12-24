@@ -222,6 +222,25 @@ CREATE TABLE IF NOT EXISTS user_update_logs(
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
 CREATE INDEX IF NOT EXISTS idx_users_registered_by ON users(registered_by);
+
+-- Leave requests table (WITHOUT document_url column)
+CREATE TABLE IF NOT EXISTS leave_requests (
+    leave_request_id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    leave_type VARCHAR(50) NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE,
+    duration_hours DECIMAL(5, 2),
+    reason TEXT,
+    status VARCHAR(20) DEFAULT 'pending',
+    approval_required BOOLEAN DEFAULT TRUE,
+    approved_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    rejection_reason TEXT,
+    created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
+    updated_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
+);
+
+-- Indexes for leave requests
 CREATE INDEX IF NOT EXISTS idx_user_delete_logs_deleted_user ON user_delete_logs(deleted_user_id);
 CREATE INDEX IF NOT EXISTS idx_user_delete_logs_deleted_by ON user_delete_logs(deleted_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_screen_share_user_id ON screen_share_sessions(user_id);
@@ -233,6 +252,9 @@ CREATE INDEX IF NOT EXISTS idx_time_tracking_date ON time_tracking(present_date)
 CREATE INDEX IF NOT EXISTS idx_late_reasons_user ON late_reasons(user_id);
 CREATE INDEX IF NOT EXISTS idx_work_updates_user ON work_updates(user_id);
 CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_leave_requests_user ON leave_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_leave_requests_status ON leave_requests(status);
+CREATE INDEX IF NOT EXISTS idx_leave_requests_date ON leave_requests(start_date);
 CREATE INDEX IF NOT EXISTS idx_user_update_logs_updated_user ON user_update_logs(updated_user_id);
 CREATE INDEX IF NOT EXISTS idx_user_update_logs_updated_by ON user_update_logs(updated_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_user_update_logs_date ON user_update_logs(updated_at);
