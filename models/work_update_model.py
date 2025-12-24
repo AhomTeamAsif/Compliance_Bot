@@ -1,5 +1,5 @@
 from utils.database import db
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Optional, Dict, Any
 
 class WorkUpdateModel:
@@ -114,3 +114,54 @@ class WorkUpdateModel:
                 LIMIT $2
             ''', user_id, limit)
             return [dict(row) for row in rows]
+
+    @staticmethod
+    async def update_admin_approval(update_id: int, admin_approval: bool) -> bool:
+        """Update admin approval status for work update"""
+        async with db.pool.acquire() as conn:
+            result = await conn.execute('''
+                UPDATE work_updates
+                SET admin_approval = $1
+                WHERE id = $2
+            ''', admin_approval, update_id)
+            return result != "UPDATE 0"
+    
+    @staticmethod
+    async def get_today_plan_by_user_id(user_id: int, date_filter: date = None) -> Optional[Dict[str, Any]]:
+        """Get today's work plan for a user by user_id"""
+        async with db.pool.acquire() as conn:
+            if date_filter:
+                query = '''
+                    SELECT wu.*, tt.present_date
+                    FROM work_updates wu
+                    JOIN time_tracking tt ON wu.time_tracking_id = tt.id
+                    WHERE wu.user_id = $1 AND tt.present_date = $2
+                    ORDER BY wu.created_at DESC
+                    LIMIT 1
+                '''
+                row = await conn.fetchrow(query, user_id, date_filter)
+            else:
+                query = '''
+                    SELECT wu.*, tt.present_date
+                    FROM work_updates wu
+                    JOIN time_tracking tt ON wu.time_tracking_id = tt.id
+                    WHERE wu.user_id = $1 AND tt.present_date = CURRENT_DATE
+                    ORDER BY wu.created_at DESC
+                    LIMIT 1
+                '''
+                row = await conn.fetchrow(query, user_id)
+            
+            return dict(row) if row else None
+    
+    @staticmethod
+    async def get_work_update_by_id(update_id: int) -> Optional[Dict[str, Any]]:
+        """Get work update by ID"""
+        async with db.pool.acquire() as conn:
+            row = await conn.fetchrow('''
+                SELECT wu.*, u.name, u.discord_id, tt.present_date
+                FROM work_updates wu
+                JOIN users u ON wu.user_id = u.user_id
+                JOIN time_tracking tt ON wu.time_tracking_id = tt.id
+                WHERE wu.id = $1
+            ''', update_id)
+            return dict(row) if row else None

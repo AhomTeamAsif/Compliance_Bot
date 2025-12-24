@@ -449,7 +449,7 @@ class UserManagement(commands.Cog):
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
-            await interaction.followup.send(  # CHANGED HERE
+            await interaction.followup.send( 
                 f"❌ Failed to fetch delete logs: {str(e)}",
                 ephemeral=True
             )
