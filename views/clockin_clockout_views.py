@@ -424,10 +424,11 @@ class PlanKnownView(ui.View):
 class LateReasonView(ui.View):
     """View for submitting late reason with button selections"""
     
-    def __init__(self, late_data: dict, interaction_user: discord.User):
+    def __init__(self, late_data: dict, interaction_user: discord.User, cog):
         super().__init__(timeout=180)
         self.late_data = late_data
         self.interaction_user = interaction_user
+        self.cog = cog
         
         # Track selections
         self.admin_informed = None
@@ -476,7 +477,7 @@ class LateReasonView(ui.View):
             return
         
         # Show modal for reason
-        modal = LateReasonModal(self.late_data, self.admin_informed, self.meeting_attended, self.interaction_user)
+        modal = LateReasonModal(self.late_data, self.admin_informed, self.meeting_attended, self.interaction_user, self.cog)
         await interaction.response.send_modal(modal)
         self.stop()
     
@@ -518,24 +519,57 @@ class LateReasonModal(ui.Modal, title='Late Arrival Reason'):
         max_length=500
     )
     
-    def __init__(self, late_data: dict, admin_informed: bool, meeting_attended: bool, interaction_user: discord.User):
+    def __init__(self, late_data: dict, admin_informed: bool, meeting_attended: bool, interaction_user: discord.User, cog):
         super().__init__()
         self.late_data = late_data
         self.admin_informed = admin_informed
         self.meeting_attended = meeting_attended
         self.interaction_user = interaction_user
+        self.cog = cog
     
     async def on_submit(self, interaction: discord.Interaction):
-        # This will be handled by the cog
-        self.late_data['reason'] = self.reason.value
-        self.late_data['admin_informed'] = self.admin_informed
-        self.late_data['meeting_attended'] = self.meeting_attended
+        from models.time_tracking_model import TimeTrackingModel
+        from models.late_reason_model import LateReasonModel
+        from views.clockin_clockout_views import PlanKnownView
+        
+        # Create time tracking record
+        time_tracking_id = await TimeTrackingModel.create_time_tracking(
+            user_id=self.late_data['user_id'],
+            starting_time=self.late_data['utc_time_no_tz'],
+            present_date=self.late_data['present_date'],
+            clock_in_time=self.late_data['utc_time_no_tz'],
+            reason=self.late_data['reason'],
+            screen_share_verified=False
+        )
+        
+        # Record late reason
+        await LateReasonModel.create_late_reason(
+            user_id=self.late_data['user_id'],
+            time_tracking_id=time_tracking_id,
+            late_mins=self.late_data['late_minutes'],
+            reason=self.reason.value,
+            is_admin_informed=self.admin_informed,
+            morning_meeting_attended=self.meeting_attended
+        )
         
         await interaction.response.send_message(
-            "✅ Late reason submitted! Processing...",
+            f"✅ **Late reason recorded!**\n\n"
+            f"**Time:** {self.late_data['utc_time'].strftime('%I:%M %p')}\n"
+            f"**Late by:** {self.late_data['late_minutes']} minutes\n"
+            f"**Reason:** {self.reason.value}\n"
+            f"**Admin Informed:** {'✅ Yes' if self.admin_informed else '❌ No'}\n"
+            f"**Meeting Attended:** {'✅ Yes' if self.meeting_attended else '❌ No'}\n\n"
+            f"⚠️ **Clock-in NOT complete yet!** Please continue...",
             ephemeral=True
         )
-
+        
+        # Ask about daily plan
+        plan_view = PlanKnownView(self.late_data['user_id'], time_tracking_id, self.interaction_user)
+        await interaction.followup.send(
+            "**📋 Do you know your workday plan?**",
+            view=plan_view,
+            ephemeral=True
+        )
 # ==================== SCREEN SHARE STOP REMINDER ====================
 
 class ScreenShareStopReminderView(ui.View):
@@ -551,4 +585,134 @@ class ScreenShareStopReminderView(ui.View):
             embed=None,
             view=None
         )
+        self.stop()
+
+# ==================== END OF DAY WORK UPDATE ====================
+
+class EndOfDayUpdateModal(ui.Modal, title='End of Day Update'):
+    """Modal for recording what was accomplished today"""
+    
+    completed1 = ui.TextInput(
+        label='Task Completed 1',
+        style=discord.TextStyle.short,
+        required=True,
+        max_length=200,
+        placeholder='Main task completed today'
+    )
+    completed2 = ui.TextInput(
+        label='Task Completed 2 (optional)',
+        style=discord.TextStyle.short,
+        required=False,
+        max_length=200
+    )
+    completed3 = ui.TextInput(
+        label='Task Completed 3 (optional)',
+        style=discord.TextStyle.short,
+        required=False,
+        max_length=200
+    )
+    issues = ui.TextInput(
+        label='Issues/Blockers (optional)',
+        style=discord.TextStyle.paragraph,
+        required=False,
+        max_length=500,
+        placeholder='Any issues or blockers faced today'
+    )
+    tomorrow = ui.TextInput(
+        label='Plans for Tomorrow (optional)',
+        style=discord.TextStyle.paragraph,
+        required=False,
+        max_length=300,
+        placeholder='What you plan to work on tomorrow'
+    )
+    
+    def __init__(self, user_id: int, time_tracking_id: int, interaction_user: discord.User, clock_out_data: dict):
+        super().__init__()
+        self.user_id = user_id
+        self.time_tracking_id = time_tracking_id
+        self.interaction_user = interaction_user
+        self.clock_out_data = clock_out_data
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """Process end of day update"""
+        from models.work_update_model import WorkUpdateModel
+        
+        completed_tasks = []
+        for task_input in [self.completed1, self.completed2, self.completed3]:
+            if task_input.value and task_input.value.strip():
+                completed_tasks.append(task_input.value.strip())
+        
+        issues_text = self.issues.value.strip() if self.issues.value else "None"
+        tomorrow_text = self.tomorrow.value.strip() if self.tomorrow.value else "Not specified"
+        
+        # Save end of day update to database
+        success = await WorkUpdateModel.update_end_of_day(
+            time_tracking_id=self.time_tracking_id,
+            completed_tasks=completed_tasks,
+            issues=issues_text,
+            tomorrow_plans=tomorrow_text
+        )
+        
+        if success:
+            await interaction.response.send_message(
+                f"✅ **End of Day Update Recorded!**\n\n"
+                f"**Completed Tasks:**\n" + "\n".join([f"{i+1}. {task}" for i, task in enumerate(completed_tasks)]) + "\n\n"
+                f"**Issues:** {issues_text}\n"
+                f"**Tomorrow's Plans:** {tomorrow_text}",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"⚠️ **Could not save end-of-day update!**\n\n"
+                f"No work plan was recorded for today. Please contact admin.",
+                ephemeral=True
+            )
+        
+        # Complete the clock-out process
+        await self.complete_clock_out(interaction)
+    
+    async def complete_clock_out(self, interaction):
+        """Complete the clock-out process"""
+        from models.screen_share_model import ScreenShareModel
+        
+        # End screen share session
+        active_session = await ScreenShareModel.get_active_session_by_user(self.user_id)
+        if active_session:
+            await ScreenShareModel.end_session(
+                session_id=active_session['session_id'],
+                reason="End of day"
+            )
+        
+        # Show screen share stop reminder
+        reminder_embed = discord.Embed(
+            title="🖥️ Remember to Stop Screen Share",
+            description=(
+                "**Your workday has ended!**\n\n"
+                "📢 **Please STOP your Discord screen share now.**\n\n"
+                "✅ You can close this message once you've stopped screen sharing."
+            ),
+            color=discord.Color.red()
+        )
+        
+        stop_view = ScreenShareStopReminderView()
+        await interaction.followup.send(embed=reminder_embed, view=stop_view, ephemeral=True)
+
+class EndOfDayPromptView(ui.View):
+    """Prompt to fill end of day update"""
+    
+    def __init__(self, user_id: int, time_tracking_id: int, interaction_user: discord.User, clock_out_data: dict):
+        super().__init__(timeout=300)
+        self.user_id = user_id
+        self.time_tracking_id = time_tracking_id
+        self.interaction_user = interaction_user
+        self.clock_out_data = clock_out_data
+    
+    @ui.button(label="Fill End of Day Update", style=discord.ButtonStyle.primary, emoji="📝")
+    async def fill_update_button(self, interaction: discord.Interaction, button: ui.Button):
+        if interaction.user.id != self.interaction_user.id:
+            await interaction.response.send_message("This is not your prompt!", ephemeral=True)
+            return
+        
+        modal = EndOfDayUpdateModal(self.user_id, self.time_tracking_id, self.interaction_user, self.clock_out_data)
+        await interaction.response.send_modal(modal)
         self.stop()
