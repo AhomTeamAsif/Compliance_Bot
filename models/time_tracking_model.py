@@ -31,8 +31,9 @@ class TimeTrackingModel:
         """Get today's time tracking record for a user"""
         async with db.pool.acquire() as conn:
             row = await conn.fetchrow('''
-                SELECT id, clock_in, clock_out, starting_time, end_of_the_day, 
-                       break_duration, time_logged_in, break_counter, screen_share_verified
+                SELECT id, clock_in, clock_out, clockin_reason, clockout_reason,
+                    starting_time, end_of_the_day, 
+                    break_duration, time_logged_in, break_counter, screen_share_verified
                 FROM time_tracking
                 WHERE user_id = $1 AND present_date = $2
                 ORDER BY created_at DESC

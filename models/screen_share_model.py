@@ -149,3 +149,38 @@ class ScreenShareModel:
                 WHERE session_id = $1
             ''', session_id)
             return session
+
+    @staticmethod
+    async def get_daily_stats(user_id: int, date: datetime.date):
+        """Get aggregated screen share stats for a specific day"""
+        async with db.pool.acquire() as conn:
+            result = await conn.fetchrow('''
+                SELECT 
+                    COUNT(*) as session_count,
+                    SUM(duration_minutes) as total_minutes,
+                    MIN(screen_share_on_time) as first_session,
+                    MAX(COALESCE(screen_share_off_time, screen_share_on_time)) as last_session
+                FROM screen_share_sessions
+                WHERE user_id = $1 
+                AND DATE(screen_share_on_time) = $2
+            ''', user_id, date)
+            return result
+
+    @staticmethod
+    async def get_user_daily_history(user_id: int, days: int = 7):
+        """Get daily aggregated history for past N days"""
+        async with db.pool.acquire() as conn:
+            results = await conn.fetch('''
+                SELECT 
+                    DATE(screen_share_on_time) as date,
+                    COUNT(*) as session_count,
+                    SUM(duration_minutes) as total_minutes,
+                    MIN(screen_share_on_time) as first_session,
+                    MAX(COALESCE(screen_share_off_time, screen_share_on_time)) as last_session
+                FROM screen_share_sessions
+                WHERE user_id = $1 
+                AND screen_share_on_time >= CURRENT_DATE - INTERVAL '%s days'
+                GROUP BY DATE(screen_share_on_time)
+                ORDER BY date DESC
+            ''' % days, user_id)
+            return results
