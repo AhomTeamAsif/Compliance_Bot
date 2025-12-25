@@ -133,6 +133,9 @@ CREATE TABLE IF NOT EXISTS work_updates (
     start_of_the_day_plan TEXT[],
     desklog_on BOOLEAN DEFAULT FALSE,
     trackabi_on BOOLEAN DEFAULT FALSE,
+    end_of_day_tasks TEXT[],
+    end_of_day_issues TEXT,
+    tomorrow_plans TEXT,
     created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
     admin_approval BOOLEAN DEFAULT FALSE,
     
