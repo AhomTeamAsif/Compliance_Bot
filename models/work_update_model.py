@@ -165,3 +165,35 @@ class WorkUpdateModel:
                 WHERE wu.id = $1
             ''', update_id)
             return dict(row) if row else None
+
+
+    @staticmethod
+    async def update_end_of_day(
+        time_tracking_id: int,
+        completed_tasks: List[str],
+        issues: str = None,
+        tomorrow_plans: str = None
+    ) -> bool:
+        """Update end of day information for existing work update"""
+        async with db.pool.acquire() as conn:
+            # Check if work update exists for this time_tracking_id
+            existing = await conn.fetchrow('''
+                SELECT id FROM work_updates
+                WHERE time_tracking_id = $1
+                ORDER BY created_at DESC
+                LIMIT 1
+            ''', time_tracking_id)
+            
+            if existing:
+                # Update existing record
+                await conn.execute('''
+                    UPDATE work_updates
+                    SET end_of_day_tasks = $1,
+                        end_of_day_issues = $2,
+                        tomorrow_plans = $3
+                    WHERE id = $4
+                ''', completed_tasks, issues, tomorrow_plans, existing['id'])
+                return True
+            else:
+                # No work update exists, return False
+                return False
