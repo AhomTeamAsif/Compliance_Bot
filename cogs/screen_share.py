@@ -173,53 +173,48 @@ class ScreenShare(commands.Cog):
     
     @app_commands.command(
         name="screen_share_status",
-        description="Check screen share channel status"
+        description="Check screen share status across all voice channels"
     )
     async def screen_share_status(self, interaction: discord.Interaction):
-        """Show current status of screen share channel"""
+        """Show current status of screen sharing in the server"""
         
         await interaction.response.defer(ephemeral=True)
         
         try:
-            channel = self.bot.get_channel(Config.VOICE_CHANNEL_ID)
-            
-            if channel is None:
-                await interaction.followup.send(
-                    "❌ Screen share channel not configured!",
-                    ephemeral=True
-                )
-                return
-            
             # Get active sessions from database
             active_sessions = await ScreenShareModel.get_all_active_sessions()
             
-            # Check who's currently streaming in voice channel
-            streaming_members = [
-                member for member in channel.members 
-                if member.voice and member.voice.self_stream
-            ]
+            # Get all voice channels in the guild
+            voice_channels = [ch for ch in interaction.guild.channels if isinstance(ch, discord.VoiceChannel)]
+            
+            # Find all members who are streaming
+            streaming_members = []
+            total_connected = 0
+            
+            for channel in voice_channels:
+                total_connected += len(channel.members)
+                for member in channel.members:
+                    if member.voice and member.voice.self_stream:
+                        streaming_members.append({
+                            'member': member,
+                            'channel': channel
+                        })
             
             embed = discord.Embed(
                 title="📺 Screen Share Status",
+                description=f"**Server:** {interaction.guild.name}",
                 color=discord.Color.blue()
             )
             
             embed.add_field(
-                name="Channel", 
-                value=channel.mention, 
-                inline=True
-            )
-            
-            embed.add_field(
-                name="Connected Members", 
-                value=f"{len(channel.members)}", 
-                inline=True
-            )
-            
-            embed.add_field(
-                name="Active Sessions (DB)",
-                value=f"{len(active_sessions)}",
-                inline=True
+                name="📊 Overview", 
+                value=(
+                    f"**Voice Channels:** {len(voice_channels)}\n"
+                    f"**Connected Members:** {total_connected}\n"
+                    f"**Currently Streaming:** {len(streaming_members)}\n"
+                    f"**Active Sessions (DB):** {len(active_sessions)}"
+                ),
+                inline=False
             )
             
             # Show database active sessions
@@ -232,29 +227,34 @@ class ScreenShare(commands.Cog):
                     )
                 
                 embed.add_field(
-                    name="🎥 Active Sessions",
-                    value="\n".join(session_list),
+                    name="🎥 Active Sessions (Database)",
+                    value="\n".join(session_list[:10]) + (f"\n*...and {len(session_list)-10} more*" if len(session_list) > 10 else ""),
                     inline=False
                 )
             else:
                 embed.add_field(
-                    name="🎥 Active Sessions",
+                    name="🎥 Active Sessions (Database)",
                     value="*No active sessions in database*",
                     inline=False
                 )
             
             # Show who's actually streaming in Discord
             if streaming_members:
-                streaming_list = "\n".join([f"• {member.display_name}" for member in streaming_members])
+                streaming_list = []
+                for item in streaming_members[:10]:  # Limit to 10
+                    streaming_list.append(
+                        f"• **{item['member'].display_name}** in {item['channel'].mention}"
+                    )
+                
                 embed.add_field(
                     name="📡 Currently Streaming (Discord)",
-                    value=streaming_list,
+                    value="\n".join(streaming_list) + (f"\n*...and {len(streaming_members)-10} more*" if len(streaming_members) > 10 else ""),
                     inline=False
                 )
             else:
                 embed.add_field(
                     name="📡 Currently Streaming (Discord)",
-                    value="*No one is streaming*",
+                    value="*No one is currently streaming*",
                     inline=False
                 )
             
@@ -265,67 +265,218 @@ class ScreenShare(commands.Cog):
                 f"❌ An error occurred: {str(e)}",
                 ephemeral=True
             )
-    
+
     @app_commands.command(
-        name="screen_share_history",
-        description="View your screen share history"
+        name="screen_share_daily_stats",
+        description="View screen share stats for a specific day"
     )
-    @app_commands.describe(limit="Number of sessions to show (default: 5)")
-    async def screen_share_history(self, interaction: discord.Interaction, limit: int = 5):
-        """Show user's screen share history"""
+    @app_commands.describe(
+        date="Date in YYYY-MM-DD format (leave empty for today)",
+        user="User to check (ADMIN only, leave empty for yourself)"
+    )
+    async def screen_share_daily_stats(
+        self, 
+        interaction: discord.Interaction, 
+        date: str = None,
+        user: discord.User = None
+    ):
+        """Show daily screen share statistics"""
         
         await interaction.response.defer(ephemeral=True)
         
         try:
+            # Determine target user
+            target_user = user if user else interaction.user
+            
+            # Check permissions if viewing another user
+            if user and user.id != interaction.user.id:
+                from utils.verification_helper import is_admin, is_super_admin
+                if not (await is_admin(interaction.user.id) or await is_super_admin(interaction.user.id)):
+                    await interaction.followup.send(
+                        "❌ Only ADMIN can view other users' stats!",
+                        ephemeral=True
+                    )
+                    return
+            
             # Get user from database
-            user = await UserModel.get_user_by_discord_id(interaction.user.id)
+            user_data = await UserModel.get_user_by_discord_id(target_user.id)
             
-            if not user:
+            if not user_data:
                 await interaction.followup.send(
-                    "❌ No history found. You haven't started any screen share sessions yet!",
+                    f"❌ {target_user.mention} is not registered!",
                     ephemeral=True
                 )
                 return
             
-            # Get history
-            sessions = await ScreenShareModel.get_user_history(user['user_id'], limit)
+            # Parse date
+            from datetime import datetime as dt
+            if date:
+                try:
+                    target_date = dt.strptime(date, '%Y-%m-%d').date()
+                except ValueError:
+                    await interaction.followup.send(
+                        "❌ Invalid date format! Use YYYY-MM-DD (e.g., 2024-12-25)",
+                        ephemeral=True
+                    )
+                    return
+            else:
+                target_date = dt.now().date()
             
-            if not sessions:
+            # Get daily stats
+            stats = await ScreenShareModel.get_daily_stats(user_data['user_id'], target_date)
+            
+            if stats['session_count'] == 0:
                 await interaction.followup.send(
-                    "📋 No screen share history found!",
+                    f"📋 No screen share sessions found for **{target_date.strftime('%Y-%m-%d')}**",
                     ephemeral=True
                 )
                 return
             
+            # Build embed
             embed = discord.Embed(
-                title=f"📊 Screen Share History",
-                description=f"Last {len(sessions)} session(s) for {interaction.user.mention}",
+                title=f"📊 Screen Share Stats - {target_date.strftime('%Y-%m-%d')}",
+                description=f"Statistics for **{user_data['name']}**",
                 color=discord.Color.blue()
             )
+            embed.set_thumbnail(url=target_user.display_avatar.url)
             
-            for session in sessions:
-                # Format timestamps
-                on_time = session['screen_share_on_time'].strftime("%Y-%m-%d %H:%M")
-                off_time = session['screen_share_off_time'].strftime("%H:%M") if session['screen_share_off_time'] else "Ongoing"
-                
-                status = "🟢 Active" if session['screen_share_off_time'] is None else "⚫ Ended"
-                duration = session['duration_minutes'] if session['duration_minutes'] else "N/A"
-                
-                field_value = (
-                    f"**Status:** {status}\n"
-                    f"**Started:** {on_time}\n"
-                    f"**Ended:** {off_time}\n"
-                    f"**Duration:** {duration} mins\n"
-                )
-                
-                if session['screen_share_on_reason']:
-                    field_value += f"**Reason:** {session['screen_share_on_reason']}\n"
-                
+            # Total time
+            total_mins = stats['total_minutes'] or 0
+            hours = total_mins // 60
+            mins = total_mins % 60
+            
+            embed.add_field(
+                name="⏱️ Total Screen Share Time",
+                value=f"**{hours}h {mins}m** ({total_mins} minutes)",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="📊 Sessions",
+                value=f"**{stats['session_count']}** session(s)",
+                inline=True
+            )
+            
+            if stats['first_session']:
                 embed.add_field(
-                    name=f"Session #{session['session_id']}",
-                    value=field_value,
+                    name="🕐 First Session",
+                    value=stats['first_session'].strftime('%I:%M %p'),
                     inline=True
                 )
+            
+            if stats['last_session']:
+                embed.add_field(
+                    name="🕐 Last Session",
+                    value=stats['last_session'].strftime('%I:%M %p'),
+                    inline=True
+                )
+            
+            embed.set_footer(text="Use /screen_share_history for detailed session list")
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ An error occurred: {str(e)}",
+                ephemeral=True
+            )
+
+    @app_commands.command(
+        name="screen_share_weekly_report",
+        description="View weekly screen share report"
+    )
+    @app_commands.describe(
+        days="Number of days to show (default: 7)",
+        user="User to check (ADMIN only, leave empty for yourself)"
+    )
+    async def screen_share_weekly_report(
+        self, 
+        interaction: discord.Interaction, 
+        days: int = 7,
+        user: discord.User = None
+    ):
+        """Show weekly screen share report"""
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Determine target user
+            target_user = user if user else interaction.user
+            
+            # Check permissions if viewing another user
+            if user and user.id != interaction.user.id:
+                from utils.verification_helper import is_admin, is_super_admin
+                if not (await is_admin(interaction.user.id) or await is_super_admin(interaction.user.id)):
+                    await interaction.followup.send(
+                        "❌ Only ADMIN can view other users' reports!",
+                        ephemeral=True
+                    )
+                    return
+            
+            # Get user from database
+            user_data = await UserModel.get_user_by_discord_id(target_user.id)
+            
+            if not user_data:
+                await interaction.followup.send(
+                    f"❌ {target_user.mention} is not registered!",
+                    ephemeral=True
+                )
+                return
+            
+            # Get daily history
+            history = await ScreenShareModel.get_user_daily_history(user_data['user_id'], days)
+            
+            if not history:
+                await interaction.followup.send(
+                    f"📋 No screen share data found for the last {days} days",
+                    ephemeral=True
+                )
+                return
+            
+            # Build embed
+            embed = discord.Embed(
+                title=f"📈 Screen Share Report - Last {days} Days",
+                description=f"Report for **{user_data['name']}**",
+                color=discord.Color.green()
+            )
+            embed.set_thumbnail(url=target_user.display_avatar.url)
+            
+            # Calculate totals
+            total_sessions = sum(row['session_count'] for row in history)
+            total_minutes = sum(row['total_minutes'] or 0 for row in history)
+            total_hours = total_minutes // 60
+            total_mins = total_minutes % 60
+            
+            embed.add_field(
+                name="📊 Summary",
+                value=(
+                    f"**Total Time:** {total_hours}h {total_mins}m\n"
+                    f"**Total Sessions:** {total_sessions}\n"
+                    f"**Days Active:** {len(history)}/{days}"
+                ),
+                inline=False
+            )
+            
+            # Show daily breakdown
+            daily_breakdown = []
+            for row in history[:10]:  # Limit to 10 days
+                day_mins = row['total_minutes'] or 0
+                day_hours = day_mins // 60
+                day_mins_rem = day_mins % 60
+                
+                daily_breakdown.append(
+                    f"**{row['date'].strftime('%Y-%m-%d')}**: "
+                    f"{day_hours}h {day_mins_rem}m ({row['session_count']} sessions)"
+                )
+            
+            embed.add_field(
+                name="📅 Daily Breakdown",
+                value="\n".join(daily_breakdown) if daily_breakdown else "No data",
+                inline=False
+            )
+            
+            if len(history) > 10:
+                embed.set_footer(text=f"Showing 10 of {len(history)} days")
             
             await interaction.followup.send(embed=embed, ephemeral=True)
             
