@@ -14,16 +14,19 @@ class LeaveRequestModel:
         end_date: str = None,
         duration_hours: int = None,
         reason: str = None,
-        approval_required: bool = True
+        approval_required: bool = True,
+        compensating_day: str = None,
+        proof_provided: bool = False
     ) -> int:
         """Create a new leave request"""
         try:
             query = """
             INSERT INTO leave_requests (
                 user_id, leave_type, start_date, end_date,
-                duration_hours, reason, status, approval_required, created_at
+                duration_hours, reason, status, approval_required, 
+                compensating_day, proof_provided, created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
             RETURNING leave_request_id
             """
             
@@ -37,7 +40,9 @@ class LeaveRequestModel:
                     duration_hours,
                     reason,
                     'pending',
-                    approval_required
+                    approval_required,
+                    compensating_day,
+                    proof_provided
                 )
             
             return leave_request_id
@@ -62,6 +67,8 @@ class LeaveRequestModel:
                 lr.reason,
                 lr.status,
                 lr.approval_required,
+                lr.compensating_day,
+                lr.proof_provided,
                 lr.created_at,
                 lr.updated_at
             FROM leave_requests lr
@@ -217,3 +224,78 @@ class LeaveRequestModel:
         except Exception as e:
             print(f"❌ Error deducting pending leave: {e}")
             raise
+    
+    @staticmethod
+    async def get_users_on_leave_for_date(check_date):
+        """Get all users who are on leave (approved or pending) for a specific date"""
+        try:
+            query = """
+            SELECT DISTINCT
+                lr.user_id,
+                u.name,
+                u.department,
+                lr.leave_type,
+                lr.start_date,
+                lr.end_date,
+                lr.status,
+                lr.reason
+            FROM leave_requests lr
+            JOIN users u ON lr.user_id = u.user_id
+            WHERE u.is_deleted = FALSE
+                AND lr.status IN ('approved', 'pending')
+                AND lr.start_date <= $1
+                AND (lr.end_date >= $1 OR lr.end_date IS NULL)
+            ORDER BY u.name
+            """
+            
+            async with db.pool.acquire() as conn:
+                rows = await conn.fetch(query, check_date)
+            
+            return [dict(row) for row in rows]
+        
+        except Exception as e:
+            print(f"❌ Error fetching users on leave: {e}")
+            raise
+    
+    @staticmethod
+    async def get_non_compliant_count(user_id: int, start_date, end_date) -> int:
+        """Get count of non-compliant leave requests for a user where the leave date falls within a date range"""
+        try:
+            query = """
+            SELECT COUNT(*) 
+            FROM leave_requests
+            WHERE user_id = $1
+                AND leave_type = 'non_compliant'
+                AND status IN ('approved', 'pending')
+                AND start_date >= $2
+                AND start_date <= $3
+            """
+            
+            async with db.pool.acquire() as conn:
+                count = await conn.fetchval(query, user_id, start_date, end_date)
+            
+            return count or 0
+        
+        except Exception as e:
+            print(f"❌ Error counting non-compliant leaves: {e}")
+            return 0
+
+    @staticmethod
+    async def get_sick_leave_count(user_id: int, start_date, end_date) -> int:
+        """Get count of sick leave requests for a user within a date range"""
+        try:
+            query = """
+            SELECT COUNT(*)
+            FROM leave_requests
+            WHERE user_id = $1
+                AND leave_type = 'sick_leave'
+                AND status IN ('approved', 'pending')
+                AND start_date >= $2
+                AND start_date <= $3
+            """
+            async with db.pool.acquire() as conn:
+                count = await conn.fetchval(query, user_id, start_date, end_date)
+            return count or 0
+        except Exception as e:
+            print(f"❌ Error counting sick leaves: {e}")
+            return 0

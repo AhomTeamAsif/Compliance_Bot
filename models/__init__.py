@@ -5,13 +5,15 @@ from .leave_model import LeaveRequestModel
 from .time_tracking_model import TimeTrackingModel
 from .late_reason_model import LateReasonModel
 from .work_update_model import WorkUpdateModel
+from .compliance_rating_model import ComplianceRatingModel
 
 __all__ = [
     'ScreenShareModel', 
-    'UserModel', 
+    'UserModel',
     'ComplianceModel',
     'TimeTrackingModel',
     'LateReasonModel',
     'WorkUpdateModel',
-    'LeaveRequestModel'
+    'LeaveRequestModel',
+    'ComplianceRatingModel'
 ]

@@ -305,7 +305,7 @@ class ScreenShare(commands.Cog):
             
             for session in sessions:
                 # Format timestamps
-                on_time = session['screen_share_on_time'].strftime("%Y-%m-%d %H:%M")
+                on_time = session['screen_share_on_time'].strftime("%d/%m/%Y %H:%M")
                 off_time = session['screen_share_off_time'].strftime("%H:%M") if session['screen_share_off_time'] else "Ongoing"
                 
                 status = "🟢 Active" if session['screen_share_off_time'] is None else "⚫ Ended"

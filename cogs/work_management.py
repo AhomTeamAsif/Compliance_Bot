@@ -74,7 +74,7 @@ class WorkManagement(commands.Cog):
                 return
             
             embed = discord.Embed(
-                title=f"📋 Work Updates - {today.strftime('%Y-%m-%d')}",
+                title=f"📋 Work Updates - {today.strftime('%d/%m/%Y')}",
                 description=f"**Total Updates:** {len(updates)}",
                 color=discord.Color.blue()
             )
@@ -139,7 +139,7 @@ class WorkManagement(commands.Cog):
                 return
             
             embed = discord.Embed(
-                title=f"⏰ Late Arrivals - {today.strftime('%Y-%m-%d')}",
+                title=f"⏰ Late Arrivals - {today.strftime('%d/%m/%Y')}",
                 description=f"**Total Late Users:** {len(late_users)}",
                 color=discord.Color.orange()
             )

@@ -216,8 +216,22 @@ CREATE TABLE IF NOT EXISTS user_update_logs(
     updated_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
 );
 
-
-
+-- Compliance ratings table
+CREATE TABLE IF NOT EXISTS compliance_ratings (
+    rating_id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    rated_by_user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE SET NULL,
+    rating_date DATE NOT NULL,
+    compliance_rule_breaks INTEGER DEFAULT 0,
+    task_submission_rating INTEGER CHECK (task_submission_rating >= 0 AND task_submission_rating <= 10),
+    task_submission_feedback TEXT,
+    overall_performance_rating INTEGER CHECK (overall_performance_rating >= 0 AND overall_performance_rating <= 10),
+    overall_performance_feedback TEXT,
+    created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
+    
+    CONSTRAINT fk_user_rating FOREIGN KEY (user_id) REFERENCES users(user_id),
+    CONSTRAINT fk_rated_by_user FOREIGN KEY (rated_by_user_id) REFERENCES users(user_id)
+);
 
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
@@ -236,9 +250,22 @@ CREATE TABLE IF NOT EXISTS leave_requests (
     approval_required BOOLEAN DEFAULT TRUE,
     approved_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
     rejection_reason TEXT,
+    compensating_day DATE,
+    proof_provided BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP),
     updated_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
 );
+
+-- Add compensating_day and proof_provided columns if they don't exist (for existing databases)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='leave_requests' AND column_name='compensating_day') THEN
+        ALTER TABLE leave_requests ADD COLUMN compensating_day DATE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='leave_requests' AND column_name='proof_provided') THEN
+        ALTER TABLE leave_requests ADD COLUMN proof_provided BOOLEAN DEFAULT FALSE;
+    END IF;
+END $$;
 
 -- Indexes for leave requests
 CREATE INDEX IF NOT EXISTS idx_user_delete_logs_deleted_user ON user_delete_logs(deleted_user_id);
@@ -262,3 +289,20 @@ CREATE INDEX IF NOT EXISTS idx_user_update_logs_updated_user ON user_update_logs
 CREATE INDEX IF NOT EXISTS idx_user_update_logs_updated_by ON user_update_logs(updated_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_user_update_logs_date ON user_update_logs(updated_at);
 CREATE INDEX IF NOT EXISTS idx_screen_share_time_tracking ON screen_share_sessions(time_tracking_id);
+CREATE INDEX IF NOT EXISTS idx_compliance_ratings_user ON compliance_ratings(user_id);
+CREATE INDEX IF NOT EXISTS idx_compliance_ratings_date ON compliance_ratings(rating_date);
+CREATE INDEX IF NOT EXISTS idx_compliance_ratings_rated_by ON compliance_ratings(rated_by_user_id);
+
+-- Global settings
+CREATE TABLE IF NOT EXISTS settings (
+    name VARCHAR(100) PRIMARY KEY,
+    int_value INTEGER,
+    updated_at TIMESTAMP DEFAULT TIMEZONE('utc', CURRENT_TIMESTAMP)
+);
+
+INSERT INTO settings (name, int_value)
+VALUES 
+    ('sick_leave_anchor_hour', 10),
+    ('sick_leave_early_hours', 12),
+    ('sick_leave_late_hours', 2)
+ON CONFLICT (name) DO NOTHING;
