@@ -48,11 +48,12 @@ class LeaveManagement(commands.Cog):
             embed.add_field(
                 name="📋 Available Leave Types",
                 value=(
-                    "**⚠️ Non-compliant** - Request 14 to 1 day before the off day\n"
                     "**💰 Paid Leave** - Must be requested 2+ weeks in advance\n"
-                    "**🤒 Sick Leave** - Request 12 hours to 2 hours  before the starting(10 AM) of the off day\n"
+                    "**📝 Unpaid Leave** - Unpaid leave request\n"
+                    "**⚠️ Non-compliant** - Request 14 to 1 day before the off day\n"
+                    "**🤒 Sick Leave** - Request 12 hours to 2 hours before the starting(10 AM) of the off day\n"
                     "**🚨 Emergency Leave** - Inform ASAP with valid reason\n"
-                    "**📝 Unpaid Leave** - Unpaid leave request"
+                    "**⏰ Half-Day Leave** - Choose between unpaid/non-compliant\n"
                 ),
                 inline=False
             )
@@ -135,6 +136,9 @@ class LeaveManagement(commands.Cog):
                     "paid_leave": "💰 Paid Leave",
                     "sick_leave": "🤒 Sick Leave",
                     "half_day": "⏰ Half-Day Leave",
+                    "half_day_paid": "💰 Paid Half-Day",
+                    "half_day_unpaid": "📝 Unpaid Half-Day",
+                    "half_day_non_compliant": "⚠️ Non-compliant Half-Day",
                     "emergency_leave": "🚨 Emergency Leave",
                     "unpaid_leave": "📝 Unpaid Leave"
                 }.get(req['leave_type'], req['leave_type'])
@@ -279,37 +283,61 @@ class LeaveManagement(commands.Cog):
                 return
             
             embed = discord.Embed(
-                title="📋 Pending Leave Requests",
-                description=f"Total: {len(pending_requests)} request(s)",
-                color=discord.Color.orange()
+                title="📋 Pending Leave Requests - Review Required",
+                description=f"🔍 **Total Requests Awaiting Review:** `{len(pending_requests)}`\n\n"
+                           f"Select one or multiple requests from the dropdown below to approve or reject them.",
+                color=0xFFA500  # Orange color
             )
-            
+
+            # Add visual separator
+            embed.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━", inline=False)
+
             for idx, req in enumerate(pending_requests, 1):
                 leave_type_display = {
                     "non_compliant": "⚠️ Non-compliant",
                     "paid_leave": "💰 Paid Leave",
                     "sick_leave": "🤒 Sick Leave",
                     "half_day": "⏰ Half-Day Leave",
+                    "half_day_paid": "💰 Paid Half-Day",
+                    "half_day_unpaid": "📝 Unpaid Half-Day",
+                    "half_day_non_compliant": "⚠️ Non-compliant Half-Day",
                     "emergency_leave": "🚨 Emergency Leave",
                     "unpaid_leave": "📝 Unpaid Leave"
                 }.get(req['leave_type'], req['leave_type'])
-                
+
+                # Format dates nicely
+                start_date_str = req['start_date'].strftime('%d/%m/%Y') if hasattr(req['start_date'], 'strftime') else str(req['start_date'])
+                end_date_str = req['end_date'].strftime('%d/%m/%Y') if hasattr(req['end_date'], 'strftime') else str(req['end_date'])
+
+                # Calculate duration
+                if req['start_date'] == req['end_date']:
+                    duration_str = "1 day"
+                else:
+                    days = (req['end_date'] - req['start_date']).days + 1
+                    duration_str = f"{days} days"
+
+                # Build field value with better formatting
                 field_value = (
-                    f"**Employee:** {req['name']}\n"
-                    f"**Type:** {leave_type_display}\n"
-                    f"**From:** {req['start_date']}\n"
-                    f"**To:** {req['end_date']}\n"
-                    f"**Reason:** {req['reason']}\n"
+                    f"```yaml\n"
+                    f"Employee: {req['name']}\n"
+                    f"```\n"
+                    f"**📅 Period:** {start_date_str} → {end_date_str} ({duration_str})\n"
+                    f"**📋 Type:** {leave_type_display}\n"
+                    f"**✏️ Reason:**\n> {req['reason']}\n"
                 )
-                
+
                 # Add note for sick leave
                 if req['leave_type'] == 'sick_leave':
-                    field_value += f"**Note:** Employee should contact HR/CEO with medical docs (if available)\n"
-                
-                field_value += f"**Requested:** {req['created_at'].strftime('%d/%m/%Y %H:%M')}"
-                
+                    field_value += f"**⚕️ Note:** *Employee should contact HR/CEO with medical documentation*\n"
+
+                field_value += f"\n**⏰ Submitted:** `{req['created_at'].strftime('%d/%m/%Y at %H:%M')}`"
+
+                # Add separator between requests (except for the last one)
+                if idx < len(pending_requests):
+                    field_value += "\n\n━━━━━━━━━━━━━━━━━━━━━━"
+
                 embed.add_field(
-                    name=f"#{idx}. Request ID: {req['leave_request_id']}",
+                    name=f"🆔 Request #{req['leave_request_id']} - #{idx}",
                     value=field_value,
                     inline=False
                 )
@@ -323,6 +351,175 @@ class LeaveManagement(commands.Cog):
                 ephemeral=True
             )
     
+    # ==================== ADMIN: VIEW USER LEAVE INFO ====================
+    @app_commands.command(
+        name="user_leave_info",
+        description="[ADMIN] View a specific user's leave information and history"
+    )
+    @app_commands.describe(
+        user="The user to view leave information for",
+        limit="Number of recent requests to show (default: 10)"
+    )
+    async def user_leave_info(self, interaction: discord.Interaction, user: discord.Member, limit: int = 10):
+        """Show a specific user's leave information for admin review"""
+
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if admin or super admin
+        if not (await is_admin(interaction.user.id) or await is_super_admin(interaction.user.id)):
+            await interaction.followup.send(
+                "❌ Only ADMIN or SUPER ADMIN can view user leave information!",
+                ephemeral=True
+            )
+            return
+
+        try:
+            # Get user from database
+            user_data = await UserModel.get_user_by_discord_id(user.id)
+
+            if not user_data:
+                await interaction.followup.send(
+                    f"❌ User {user.mention} is not registered in the system!",
+                    ephemeral=True
+                )
+                return
+
+            # Get user's leave requests
+            leave_requests = await LeaveRequestModel.get_user_leave_requests(
+                user_data['user_id'],
+                limit
+            )
+
+            # Create main embed with user info
+            embed = discord.Embed(
+                title=f"📋 Leave Information - {user_data['name']}",
+                description=f"**Discord:** {user.mention}\n**Department:** {user_data['department'] or 'N/A'}\n**Position:** {user_data['position'] or 'N/A'}",
+                color=discord.Color.blue()
+            )
+
+            # Add pending leaves balance
+            pending_leaves = user_data['pending_leaves']
+            if pending_leaves > 10:
+                balance_color = "🟢"
+            elif pending_leaves > 5:
+                balance_color = "🟡"
+            else:
+                balance_color = "🔴"
+
+            embed.add_field(
+                name="💼 Leave Balance",
+                value=(
+                    f"{balance_color} **Pending Paid Leaves:** {pending_leaves} day(s)\n"
+                    f"**Contract Started:** {user_data['contract_started_at'].strftime('%d/%m/%Y') if user_data['contract_started_at'] else 'N/A'}"
+                ),
+                inline=False
+            )
+
+            # Add leave history
+            if not leave_requests:
+                embed.add_field(
+                    name="📜 Leave History",
+                    value="No leave requests found.",
+                    inline=False
+                )
+            else:
+                # Count leave types
+                leave_stats = {
+                    'approved': 0,
+                    'pending': 0,
+                    'rejected': 0,
+                    'paid_leave': 0,
+                    'sick_leave': 0,
+                    'non_compliant': 0,
+                    'emergency_leave': 0
+                }
+
+                for req in leave_requests:
+                    leave_stats[req['status']] += 1
+                    if req['leave_type'] in leave_stats:
+                        leave_stats[req['leave_type']] += 1
+
+                embed.add_field(
+                    name="📊 Leave Statistics (Last 10 Requests)",
+                    value=(
+                        f"**Status:**\n"
+                        f"✅ Approved: {leave_stats['approved']}\n"
+                        f"⏳ Pending: {leave_stats['pending']}\n"
+                        f"❌ Rejected: {leave_stats['rejected']}\n\n"
+                        f"**Types:**\n"
+                        f"💰 Paid Leave: {leave_stats['paid_leave']}\n"
+                        f"🤒 Sick Leave: {leave_stats['sick_leave']}\n"
+                        f"⚠️ Non-compliant: {leave_stats['non_compliant']}\n"
+                        f"🚨 Emergency: {leave_stats['emergency_leave']}"
+                    ),
+                    inline=False
+                )
+
+                embed.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━", inline=False)
+
+                # Show recent leave requests
+                status_emoji = {
+                    "pending": "⏳",
+                    "approved": "✅",
+                    "rejected": "❌"
+                }
+
+                for idx, req in enumerate(leave_requests[:5], 1):  # Show only top 5 in detail
+                    leave_type_display = {
+                        "non_compliant": "⚠️ Non-compliant",
+                        "paid_leave": "💰 Paid Leave",
+                        "sick_leave": "🤒 Sick Leave",
+                        "half_day": "⏰ Half-Day Leave",
+                        "half_day_paid": "💰 Paid Half-Day",
+                        "half_day_unpaid": "📝 Unpaid Half-Day",
+                        "half_day_non_compliant": "⚠️ Non-compliant Half-Day",
+                        "emergency_leave": "🚨 Emergency Leave",
+                        "unpaid_leave": "📝 Unpaid Leave"
+                    }.get(req['leave_type'], req['leave_type'])
+
+                    status = req['status']
+                    emoji = status_emoji.get(status, "❓")
+
+                    # Calculate duration
+                    if req['duration_hours']:
+                        duration_str = f"{req['duration_hours']} hour(s)"
+                    else:
+                        days = (req['end_date'] - req['start_date']).days + 1
+                        duration_str = f"{days} day(s)"
+
+                    field_value = (
+                        f"**Type:** {leave_type_display}\n"
+                        f"**Status:** {emoji} {status.capitalize()}\n"
+                        f"**Period:** {req['start_date'].strftime('%d/%m/%Y')} → {req['end_date'].strftime('%d/%m/%Y')}\n"
+                        f"**Duration:** {duration_str}\n"
+                        f"**Reason:** {req['reason'][:100]}{'...' if len(req['reason']) > 100 else ''}\n"
+                        f"**Requested:** {req['created_at'].strftime('%d/%m/%Y %H:%M')}"
+                    )
+
+                    embed.add_field(
+                        name=f"Request #{req['leave_request_id']}",
+                        value=field_value,
+                        inline=False
+                    )
+
+                if len(leave_requests) > 5:
+                    embed.add_field(
+                        name="\u200b",
+                        value=f"*... and {len(leave_requests) - 5} more requests (use limit parameter to see more)*",
+                        inline=False
+                    )
+
+            embed.set_footer(text=f"Requested by {interaction.user.name}")
+            embed.timestamp = datetime.now(pytz.UTC)
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ An error occurred: {str(e)}",
+                ephemeral=True
+            )
+
     # ==================== ATTENDANCE DETAILS ====================
     @app_commands.command(
         name="attendance_details",
@@ -461,5 +658,6 @@ class LeaveManagement(commands.Cog):
             )
 
 
+   
 async def setup(bot):
     await bot.add_cog(LeaveManagement(bot))

@@ -2,6 +2,7 @@
 import discord
 from discord import ui
 from datetime import datetime, timedelta
+import pytz
 from models.user_model import UserModel
 from models.leave_model import LeaveRequestModel
 from models.settings_model import SettingsModel
@@ -17,16 +18,22 @@ class LeaveTypeSelectView(discord.ui.View):
         placeholder="Select Leave Type",
         options=[
             discord.SelectOption(
-                label="Non-compliant",
-                value="non_compliant",
-                emoji="⚠️",
-                description="Request 14 to 1 day before the off day"
-            ),
-            discord.SelectOption(
                 label="Paid Leave",
                 value="paid_leave",
                 emoji="💰",
                 description="Must be requested at least 2 weeks in advance"
+            ),
+            discord.SelectOption(
+                label="Unpaid Leave",
+                value="unpaid_leave",
+                emoji="📝",
+                description="Unpaid leave request"
+            ),
+            discord.SelectOption(
+                label="Non-compliant",
+                value="non_compliant",
+                emoji="⚠️",
+                description="Request 14 to 1 day before the off day"
             ),
             discord.SelectOption(
                 label="Sick Leave",
@@ -41,10 +48,10 @@ class LeaveTypeSelectView(discord.ui.View):
                 description="Inform ASAP with valid reason"
             ),
             discord.SelectOption(
-                label="Unpaid Leave",
-                value="unpaid_leave",
-                emoji="📝",
-                description="Unpaid leave request"
+                label="Half-Day Leave",
+                value="half_day",
+                emoji="⏰",
+                description="Choose between unpaid/non-compliant"
             ),
         ]
     )
@@ -67,6 +74,60 @@ class LeaveTypeSelectView(discord.ui.View):
             await interaction.response.send_modal(modal)
         elif self.selected_leave_type == "unpaid_leave":
             modal = UnpaidLeaveModal()
+            await interaction.response.send_modal(modal)
+        elif self.selected_leave_type == "half_day":
+            # Show sub-type selection for half-day
+            view = HalfDaySubTypeSelectView()
+            embed = discord.Embed(
+                title="⏰ Half-Day Leave - Step 2/3",
+                description="**Select the sub-type** for your half-day leave:",
+                color=discord.Color.blue()
+            )
+            embed.add_field(
+                name="📋 Available Sub-Types",
+                value=(
+                    "**📝 Unpaid** - No deduction from leave balance\n"
+                    "**⚠️ Non-compliant** - Short notice half-day leave\n"
+                ),
+                inline=False
+            )
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            return
+
+        self.stop()
+
+class HalfDaySubTypeSelectView(discord.ui.View):
+    """Select half-day leave sub-type (unpaid/non-compliant)"""
+    def __init__(self):
+        super().__init__(timeout=180)
+        self.selected_sub_type = None
+
+    @discord.ui.select(
+        placeholder="Select Half-Day Sub-Type",
+        options=[
+            discord.SelectOption(
+                label="Unpaid Half-Day",
+                value="half_day_unpaid",
+                emoji="📝",
+                description="No deduction from leave balance"
+            ),
+            discord.SelectOption(
+                label="Non-compliant Half-Day",
+                value="half_day_non_compliant",
+                emoji="⚠️",
+                description="Short notice half-day leave"
+            ),
+        ]
+    )
+    async def half_day_sub_type_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+        self.selected_sub_type = select.values[0]
+
+        # Show appropriate modal based on sub-type
+        if self.selected_sub_type == "half_day_unpaid":
+            modal = HalfDayUnpaidModal()
+            await interaction.response.send_modal(modal)
+        elif self.selected_sub_type == "half_day_non_compliant":
+            modal = HalfDayNonCompliantModal()
             await interaction.response.send_modal(modal)
 
         self.stop()
@@ -330,24 +391,25 @@ class SickLeaveModal(discord.ui.Modal, title="Sick Leave Request"):
             await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
 
 
-class HalfDayLeaveModal(discord.ui.Modal, title="Half-Day Leave Request"):
-    """Modal for half-day leave request"""
+
+class HalfDayUnpaidModal(discord.ui.Modal, title="Unpaid Half-Day Leave Request"):
+    """Modal for unpaid half-day leave request"""
     date = discord.ui.TextInput(
         label="Date of Half-Day Leave",
-        placeholder="DD/MM/YYYY",
+        placeholder="DD/MM/YYYY (must be 2+ weeks from today)",
         required=True,
         max_length=10,
         style=discord.TextStyle.short
     )
-    
-    duration = discord.ui.TextInput(
-        label="Duration (in hours)",
-        placeholder="Maximum 2 hours (e.g., 1, 1.5, 2)",
-        required=True,
-        max_length=4,
-        style=discord.TextStyle.short
-    )
-    
+
+    half_selection = discord.ui.TextInput(
+    label="Which Half?",
+    placeholder="Enter 'Morning' or 'Afternoon'",
+    required=True,
+    max_length=20,
+    style=discord.TextStyle.short
+)
+
     reason = discord.ui.TextInput(
         label="Reason for Half-Day Leave",
         placeholder="Enter your reason...",
@@ -355,118 +417,274 @@ class HalfDayLeaveModal(discord.ui.Modal, title="Half-Day Leave Request"):
         max_length=500,
         style=discord.TextStyle.paragraph
     )
-    
+
     async def on_submit(self, interaction: discord.Interaction):
         try:
             # Validate date
             date_obj = datetime.strptime(self.date.value, "%d/%m/%Y")
             today = datetime.now()
-            today_date = today.date()
-            request_date = date_obj.date()
-            
-            # Validate that date is not in the past
-            if request_date < today_date:
+
+            # Check if at least 2 weeks in advance
+            days_advance = (date_obj - today).days
+            if days_advance < 14:
                 await interaction.response.send_message(
-                    f"❌ **Invalid Date!**\n"
-                    f"Half-day leave can only be requested for today or future dates.\n"
-                    f"**Today:** {today_date.strftime('%d/%m/%Y')}\n"
-                    f"**Your requested date:** {self.date.value}\n"
-                    f"Please select today or a future date.",
+                    f"❌ Unpaid half-day leave must be requested at least 2 weeks in advance!\n"
+                    f"Current date: {today.strftime('%d/%m/%Y')}\n"
+                    f"Your requested date: {self.date.value}\n"
+                    f"Days in advance: {days_advance} (minimum required: 14)",
                     ephemeral=True
                 )
                 return
-            
-            # Validate duration
-            try:
-                hours = float(self.duration.value)
-            except ValueError:
+
+            # Validate half selection
+            # Validate half selection
+            half_value = self.half_selection.value.strip().lower()
+            if half_value not in ['morning', 'afternoon']:
                 await interaction.response.send_message(
-                    "❌ Duration must be a valid number (e.g., 1, 1.5, 2)",
+                    "❌ Invalid selection! Please enter either 'Morning' or 'Afternoon'.",
                     ephemeral=True
                 )
                 return
-            
-            if hours > 2:
-                await interaction.response.send_message(
-                    f"❌ Half-day leave cannot exceed 2 hours!\n"
-                    f"You requested: {hours} hours",
-                    ephemeral=True
-                )
-                return
-            
-            if hours <= 0:
-                await interaction.response.send_message(
-                    "❌ Duration must be greater than 0 hours!",
-                    ephemeral=True
-                )
-                return
-            
-            # Validate advance notice for present day requests
-            if request_date == today_date:
-                # Calculate 7 PM today
-                seven_pm_today = datetime.combine(today_date, datetime.min.time().replace(hour=19, minute=0))
-                # Calculate deadline: X hours before 7 PM (where X = duration)
-                deadline = seven_pm_today - timedelta(hours=hours)
-                
-                # Check if current time is before the deadline
-                if today >= deadline:
-                    hours_short = (today - deadline).total_seconds() / 3600
-                    await interaction.response.send_message(
-                        f"❌ **Too Late to Request!**\n"
-                        f"For a {hours}-hour half-day leave today, you must request at least **{hours} hour(s) before 7:00 PM**.\n"
-                        f"**Requested date:** {self.date.value} (Today)\n"
-                        f"**Duration:** {hours} hour(s)\n"
-                        f"**Deadline:** {deadline.strftime('%d/%m/%Y %I:%M %p')}\n"
-                        f"**Current time:** {today.strftime('%d/%m/%Y %I:%M %p')}\n"
-                        f"**You are {hours_short:.1f} hour(s) late!**\n\n"
-                        f"Please contact your manager directly if this is urgent.",
-                        ephemeral=True
-                    )
-                    return
-            
+
+            # Normalize the value for display
+            half_display = "Morning (4 hours)" if half_value == 'morning' else "Afternoon (4 hours)"
+
             # Show confirmation
-            view = ConfirmLeaveView("half_day", self.date.value, self.date.value, 
-                                   hours, self.reason.value)
-            
+            view = ConfirmHalfDayLeaveView("half_day_unpaid", self.date.value, half_display, self.reason.value)
+
             embed = discord.Embed(
-                title="📋 Half-Day Leave Request Summary",
+                title="📋 Unpaid Half-Day Leave Request Summary",
                 description="Please review your request:",
                 color=discord.Color.blue()
             )
-            embed.add_field(name="⏰ Leave Type", value="Half-Day Leave", inline=True)
+            embed.add_field(name="📝 Leave Type", value="Unpaid Half-Day Leave", inline=True)
             embed.add_field(name="📅 Date", value=self.date.value, inline=True)
-            embed.add_field(name="⏱️ Duration", value=f"{hours} hour(s)", inline=True)
+            embed.add_field(name="⏱️ Duration", value=half_display, inline=True)
             embed.add_field(name="✏️ Reason", value=self.reason.value, inline=False)
-            # Add validation info based on date
-            if request_date == today_date:
-                deadline = datetime.combine(today_date, datetime.min.time().replace(hour=19, minute=0)) - timedelta(hours=hours)
-                embed.add_field(
-                    name="⚠️ Important",
-                    value=(
-                        f"Half-day leave requires prior approval from your manager.\n"
-                        f"**Advance Notice:** Requested at least {hours} hour(s) before 7:00 PM (deadline: {deadline.strftime('%I:%M %p')})"
-                    ),
-                    inline=False
-                )
-            else:
-                embed.add_field(
-                    name="⚠️ Important",
-                    value="Half-day leave requires prior approval from your manager.",
-                    inline=False
-                )
-            
+            embed.add_field(
+                name="⚠️ Important",
+                value="Your request requires manager approval. You'll be notified once reviewed.",
+                inline=False
+            )
+
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-        
-        except ValueError as ve:
-            if "time data" in str(ve):
-                await interaction.response.send_message(
-                    "❌ Invalid date format! Please use DD/MM/YYYY",
-                    ephemeral=True
-                )
-            else:
-                raise
+
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Invalid date format! Please use DD/MM/YYYY",
+                ephemeral=True
+            )
         except Exception as e:
             await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
+
+
+class HalfDayNonCompliantModal(discord.ui.Modal, title="Non-compliant Half-Day Leave Request"):
+    """Modal for non-compliant half-day leave request"""
+    date = discord.ui.TextInput(
+        label="Date of Half-Day Leave",
+        placeholder="DD/MM/YYYY (14 to 1 day before)",
+        required=True,
+        max_length=10,
+        style=discord.TextStyle.short
+    )
+
+    half_selection = discord.ui.TextInput(
+        label="Which Half?",
+        placeholder="Enter 'Morning' or 'Afternoon'",
+        required=True,
+        max_length=20,
+        style=discord.TextStyle.short
+    )
+
+    reason = discord.ui.TextInput(
+        label="Reason for Half-Day Leave",
+        placeholder="Enter your reason...",
+        required=True,
+        max_length=500,
+        style=discord.TextStyle.paragraph
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            # Validate date
+            today = datetime.now()
+            today_date = today.date()
+            date_obj = datetime.strptime(self.date.value, "%d/%m/%Y").date()
+
+            # Calculate days before the off day (14 to 1 day before)
+            days_before = (date_obj - today_date).days
+
+            # Validate date range: must be 14 to 1 day before
+            if days_before < 1 or days_before > 14:
+                await interaction.response.send_message(
+                    f"❌ **Invalid Date Range!**\n"
+                    f"Non-compliant half-day leave must be requested 14 to 1 day before the off day.\n"
+                    f"**Today:** {today_date.strftime('%d/%m/%Y')}\n"
+                    f"**Your requested date:** {self.date.value}\n"
+                    f"**Days before:** {days_before} (must be between 1 and 14 days)",
+                    ephemeral=True
+                )
+                return
+
+            # Validate half selection
+            # Validate half selection
+            half_value = self.half_selection.value.strip().lower()
+            if half_value not in ['morning', 'afternoon']:
+                await interaction.response.send_message(
+                    "❌ Invalid selection! Please enter either 'Morning' or 'Afternoon'.",
+                    ephemeral=True
+                )
+                return
+
+            # Normalize the value for display
+            half_display = "Morning (4 hours)" if half_value == 'morning' else "Afternoon (4 hours)"
+
+            # Show confirmation
+            view = ConfirmHalfDayLeaveView("half_day_non_compliant", self.date.value, half_display, self.reason.value)
+
+            embed = discord.Embed(
+                title="📋 Non-compliant Half-Day Leave Request Summary",
+                description="Please review your request:",
+                color=discord.Color.orange()
+            )
+            embed.add_field(name="⚠️ Leave Type", value="Non-compliant Half-Day Leave", inline=True)
+            embed.add_field(name="📅 Date", value=self.date.value, inline=True)
+            embed.add_field(name="⏱️ Duration", value=half_display, inline=True)
+            embed.add_field(name="📊 Days Before", value=f"{days_before} day(s)", inline=True)
+            embed.add_field(name="✏️ Reason", value=self.reason.value, inline=False)
+            embed.add_field(
+                name="⚠️ Important",
+                value="Your request requires manager approval. You'll be notified once reviewed.",
+                inline=False
+            )
+
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Invalid date format! Please use DD/MM/YYYY",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
+
+
+class ConfirmHalfDayLeaveView(discord.ui.View):
+    """Confirmation view for half-day leave request"""
+    def __init__(self, leave_type: str, date: str, half_display: str, reason: str):
+        super().__init__(timeout=180)
+        self.leave_type = leave_type
+        self.date = date
+        self.half_display = half_display
+        self.reason = reason
+
+    @discord.ui.button(label="Submit Request", style=discord.ButtonStyle.success, emoji="✅")
+    async def submit_request(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            # Get user from database
+            user = await UserModel.get_user_by_discord_id(interaction.user.id)
+            if not user:
+                await interaction.response.send_message(
+                    "❌ User not found in database!",
+                    ephemeral=True
+                )
+                return
+
+            # Convert string date to date object
+            date_obj = datetime.strptime(self.date, "%d/%m/%Y").date()
+
+            # Create leave request in database (4 hours for half-day)
+            leave_request_id = await LeaveRequestModel.create_leave_request(
+                user_id=user['user_id'],
+                leave_type=self.leave_type,
+                start_date=date_obj,
+                end_date=date_obj,
+                duration_hours=4.0,
+                reason=self.reason,
+                approval_required=True
+            )
+
+            # Note: Deduction from pending_leaves happens upon approval, not submission
+
+            # Get leave type display name
+            leave_type_display = {
+                "half_day_paid": "💰 Paid Half-Day",
+                "half_day_unpaid": "📝 Unpaid Half-Day",
+                "half_day_non_compliant": "⚠️ Non-compliant Half-Day"
+            }.get(self.leave_type, self.leave_type)
+
+            # Send colorful success message
+            embed = discord.Embed(
+                title="✅ Half-Day Leave Request Submitted Successfully!",
+                description=f"🎉 **Your {leave_type_display} leave request has been submitted for approval!**",
+                color=0x00FF00  # Bright green color
+            )
+
+            # Add visual separator
+            embed.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━", inline=False)
+
+            embed.add_field(
+                name="🆔 Request ID",
+                value=f"```yaml\n{leave_request_id}\n```",
+                inline=False
+            )
+            embed.add_field(
+                name="📋 Leave Type",
+                value=f"```diff\n+ {leave_type_display}\n```",
+                inline=True
+            )
+            embed.add_field(
+                name="📅 Date",
+                value=f"```yaml\n{self.date}\n```",
+                inline=True
+            )
+            embed.add_field(
+                name="⏱️ Duration",
+                value=f"```yaml\n{self.half_display}\n```",
+                inline=True
+            )
+
+            # Add separator
+            embed.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━", inline=False)
+
+            embed.add_field(
+                name="📊 Status",
+                value="```css\n[⏳ Pending Manager Review]\n```",
+                inline=False
+            )
+
+            embed.add_field(
+                name="📬 Next Steps",
+                value="```md\n# Your manager will review your request\n- Check status: /my_leaves command\n- You will be notified once reviewed\n```",
+                inline=False
+            )
+
+            # Add footer with timestamp
+            embed.set_footer(
+                text=f"✨ Submitted by {interaction.user.name}",
+                icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else None
+            )
+            embed.timestamp = datetime.now()
+
+            # Add thumbnail
+            embed.set_thumbnail(url="https://em-content.zobj.net/thumbs/120/twitter/348/check-mark-button_2705.png")
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            self.stop()
+
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Error submitting request: {str(e)}",
+                ephemeral=True
+            )
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, emoji="❌")
+    async def cancel_request(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "❌ Leave request cancelled.",
+            ephemeral=True
+        )
+        self.stop()
 
 
 class EmergencyLeaveModal(discord.ui.Modal, title="Emergency Leave Request"):
@@ -809,22 +1027,22 @@ class UnpaidLeaveModal(discord.ui.Modal, title="Unpaid Leave Request"):
 
 class SickLeaveSettingsModal(discord.ui.Modal, title="Sick Leave Settings"):
     anchor_hour = discord.ui.TextInput(
-        label="Anchor Hour (0-23)",
+        label="Starting Hour of the Day (0-23)",
         placeholder="10",
         required=True,
         max_length=2,
         style=discord.TextStyle.short
     )
     early_hours = discord.ui.TextInput(
-        label="Early Window Hours (e.g., 12)",
-        placeholder="12",
+        label="Early Window Hours (e.g 12)",
+        placeholder=" 12 means 12 hours before the starting Hour of the Day",
         required=True,
         max_length=2,
         style=discord.TextStyle.short
     )
     late_hours = discord.ui.TextInput(
         label="Late Window Hours (e.g., 2)",
-        placeholder="2",
+        placeholder="2 means 2 hours before the starting Hour of the Day ",
         required=True,
         max_length=2,
         style=discord.TextStyle.short
@@ -835,7 +1053,7 @@ class SickLeaveSettingsModal(discord.ui.Modal, title="Sick Leave Settings"):
             eh = int(self.early_hours.value)
             lh = int(self.late_hours.value)
             if ah < 0 or ah > 23:
-                await interaction.response.send_message("❌ Anchor hour must be between 0 and 23.", ephemeral=True)
+                await interaction.response.send_message("❌ Starting Hour of the Day must be between 0 and 23.", ephemeral=True)
                 return
             if eh <= 0 or lh <= 0:
                 await interaction.response.send_message("❌ Hours must be positive integers.", ephemeral=True)
@@ -844,15 +1062,59 @@ class SickLeaveSettingsModal(discord.ui.Modal, title="Sick Leave Settings"):
                 await interaction.response.send_message("❌ Early hours must be greater than late hours.", ephemeral=True)
                 return
             await SettingsModel.update_sick_leave_settings(ah, eh, lh)
+
+            # Create colorful success embed with enhanced visibility
             embed = discord.Embed(
-                title="✅ Sick Leave Settings Updated",
-                description="New window and anchor time have been saved.",
-                color=discord.Color.green()
+                title="✅ Sick Leave Settings Updated Successfully!",
+                description="🎉 **The new sick leave window settings have been saved and are now in effect!**",
+                color=0x00FF00  # Bright green color
             )
-            embed.add_field(name="Anchor Hour", value=str(ah), inline=True)
-            embed.add_field(name="Early Hours", value=str(eh), inline=True)
-            embed.add_field(name="Late Hours", value=str(lh), inline=True)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+            # Add a visual separator
+            embed.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━", inline=False)
+
+            embed.add_field(
+                name="⏰ Starting Hour of the Day",
+                value=f"```yaml\n{ah:02d}:00 ({ah} hours)\n```",
+                inline=True
+            )
+            embed.add_field(
+                name="🕐 Early Window",
+                value=f"```diff\n+ {eh} hours before start\n```",
+                inline=True
+            )
+            embed.add_field(
+                name="🕑 Late Window",
+                value=f"```diff\n+ {lh} hours before start\n```",
+                inline=True
+            )
+
+            # Add another separator
+            embed.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━", inline=False)
+
+            embed.add_field(
+                name="📋 Application Window",
+                value=f"```css\n[Employees can apply from {eh} hours to {lh} hours before {ah:02d}:00]\n```",
+                inline=False
+            )
+
+            embed.add_field(
+                name="🎉 Status",
+                value="```diff\n+ Settings Successfully Updated and Applied!\n```",
+                inline=False
+            )
+
+            # Add footer with timestamp
+            embed.set_footer(
+                text=f"✨ Updated by {interaction.user.name}",
+                icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else None
+            )
+            embed.timestamp = datetime.now()
+
+            # Add a thumbnail for visual appeal
+            embed.set_thumbnail(url="https://em-content.zobj.net/thumbs/120/twitter/348/check-mark-button_2705.png")
+
+            await interaction.response.send_message(embed=embed, ephemeral=False)
         except ValueError:
             await interaction.response.send_message("❌ Invalid numbers provided.", ephemeral=True)
         except Exception as e:
@@ -1105,46 +1367,96 @@ class ConfirmLeaveView(discord.ui.View):
                 "non_compliant": "⚠️ Non-compliant",
                 "sick_leave": "🤒 Sick Leave",
                 "half_day": "⏰ Half-Day Leave",
+                "half_day_paid": "💰 Paid Half-Day",
+                "half_day_unpaid": "📝 Unpaid Half-Day",
+                "half_day_non_compliant": "⚠️ Non-compliant Half-Day",
                 "emergency_leave": "🚨 Emergency Leave"
             }.get(self.leave_type, self.leave_type)
             
-            # Send success message
+            # Send colorful success message
             embed = discord.Embed(
                 title="✅ Leave Request Submitted Successfully!",
-                description=f"Your {leave_type_display} request has been submitted for approval.",
-                color=discord.Color.green()
+                description=f"🎉 **Your {leave_type_display} request has been submitted for approval!**",
+                color=0x00FF00  # Bright green color
             )
-            embed.add_field(name="Request ID", value=f"`{leave_request_id}`", inline=False)
-            embed.add_field(name="Leave Type", value=leave_type_display, inline=True)
-            embed.add_field(name="From", value=self.start_date, inline=True)
-            embed.add_field(name="To", value=self.end_date, inline=True)
-            
+
+            # Add visual separator
+            embed.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━", inline=False)
+
+            embed.add_field(
+                name="🆔 Request ID",
+                value=f"```yaml\n{leave_request_id}\n```",
+                inline=False
+            )
+            embed.add_field(
+                name="📋 Leave Type",
+                value=f"```diff\n+ {leave_type_display}\n```",
+                inline=True
+            )
+            embed.add_field(
+                name="📅 From",
+                value=f"```yaml\n{self.start_date}\n```",
+                inline=True
+            )
+            embed.add_field(
+                name="📅 To",
+                value=f"```yaml\n{self.end_date}\n```",
+                inline=True
+            )
+
             if self.duration_hours:
-                embed.add_field(name="Duration", value=f"{self.duration_hours} hour(s)", inline=True)
+                embed.add_field(
+                    name="⏱️ Duration",
+                    value=f"```yaml\n{self.duration_hours} hour(s)\n```",
+                    inline=True
+                )
             else:
-                embed.add_field(name="Duration", value=f"{self.duration_days} day(s)", inline=True)
-            
-            embed.add_field(name="Status", value="⏳ Pending Review", inline=False)
-            
+                embed.add_field(
+                    name="⏱️ Duration",
+                    value=f"```yaml\n{self.duration_days} day(s)\n```",
+                    inline=True
+                )
+
+            # Add separator
+            embed.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━", inline=False)
+
+            embed.add_field(
+                name="📊 Status",
+                value="```css\n[⏳ Pending Manager Review]\n```",
+                inline=False
+            )
+
             # Add special message for sick leave
             if self.leave_type == "sick_leave":
                 embed.add_field(
                     name="📬 Next Steps",
                     value=(
-                        "**Remember to inform HR or CEO directly!**\n\n"
-                        "• If you have medical documentation, share it with HR/CEO\n"
-                        "• Your manager will review your request\n"
-                        "• Check status using `/my_leaves` command"
+                        "```md\n"
+                        "# IMPORTANT: Remember to inform HR or CEO directly!\n\n"
+                        "- Share medical documentation with HR/CEO\n"
+                        "- Manager will review your request\n"
+                        "- Check status: /my_leaves command\n"
+                        "```"
                     ),
                     inline=False
                 )
             else:
                 embed.add_field(
                     name="📬 Next Steps",
-                    value="Your manager will review your request. You can check the status using `/my_leaves` command.",
+                    value="```md\n# Your manager will review your request\n- Check status: /my_leaves command\n- You will be notified once reviewed\n```",
                     inline=False
                 )
-            
+
+            # Add footer with timestamp
+            embed.set_footer(
+                text=f"✨ Submitted by {interaction.user.name}",
+                icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else None
+            )
+            embed.timestamp = datetime.now()
+
+            # Add thumbnail
+            embed.set_thumbnail(url="https://em-content.zobj.net/thumbs/120/twitter/348/check-mark-button_2705.png")
+
             await interaction.response.send_message(embed=embed, ephemeral=True)
             self.stop()
         
@@ -1219,11 +1531,11 @@ class ConfirmLeaveView(discord.ui.View):
 
 
 class ReviewLeaveRequestsView(discord.ui.View):
-    """Admin view to approve or reject pending leave requests"""
+    """Admin view to select pending leave requests (Step 1)"""
     def __init__(self, pending_requests, reviewer_discord_id: int):
         super().__init__(timeout=300)
         self.reviewer_discord_id = reviewer_discord_id
-        self.selected_request_id = None
+        self.pending_requests = pending_requests
 
         options = []
         leave_type_display = {
@@ -1232,7 +1544,10 @@ class ReviewLeaveRequestsView(discord.ui.View):
             "non_compliant": "Non-compliant",
             "sick_leave": "Sick",
             "emergency_leave": "Emergency",
-            "half_day": "Half-Day"
+            "half_day": "Half-Day",
+            "half_day_paid": "Paid Half-Day",
+            "half_day_unpaid": "Unpaid Half-Day",
+            "half_day_non_compliant": "Non-compliant Half-Day"
         }
 
         for req in pending_requests:
@@ -1244,11 +1559,13 @@ class ReviewLeaveRequestsView(discord.ui.View):
                 description=description[:100]
             ))
 
+        # Allow multiple selections (up to 25, which is Discord's max)
+        max_selections = min(len(options), 25)
         self.leave_select = discord.ui.Select(
-            placeholder="Select a leave request",
+            placeholder="Select leave request(s) - You can select multiple",
             options=options,
             min_values=1,
-            max_values=1
+            max_values=max_selections
         )
         self.leave_select.callback = self.on_select
         self.add_item(self.leave_select)
@@ -1261,26 +1578,32 @@ class ReviewLeaveRequestsView(discord.ui.View):
             )
             return
 
-        self.selected_request_id = int(self.leave_select.values[0])
+        selected_request_ids = [int(req_id) for req_id in self.leave_select.values]
+        count = len(selected_request_ids)
+        ids_str = ", ".join([f"#{req_id}" for req_id in selected_request_ids])
+
+        # Show Step 2 view with Approve All and Reject All buttons
+        action_view = ReviewLeaveRequestsActionView(selected_request_ids, self.reviewer_discord_id)
+
         await interaction.response.send_message(
-            f"ℹ️ Selected request **#{self.selected_request_id}**. Choose Approve or Reject.",
+            f"ℹ️ Selected **{count}** request(s): {ids_str}\nChoose **Approve All** or **Reject All** below.",
+            view=action_view,
             ephemeral=True
         )
+
+
+class ReviewLeaveRequestsActionView(discord.ui.View):
+    """Admin view to approve or reject selected leave requests (Step 2)"""
+    def __init__(self, selected_request_ids: list, reviewer_discord_id: int):
+        super().__init__(timeout=300)
+        self.selected_request_ids = selected_request_ids
+        self.reviewer_discord_id = reviewer_discord_id
 
     def _is_authorized(self, interaction: discord.Interaction) -> bool:
         return interaction.user.id == self.reviewer_discord_id
 
-    async def _ensure_selection(self, interaction: discord.Interaction) -> bool:
-        if not self.selected_request_id:
-            await interaction.response.send_message(
-                "❌ Please select a leave request first.",
-                ephemeral=True
-            )
-            return False
-        return True
-
-    @discord.ui.button(label="Approve", style=discord.ButtonStyle.success, emoji="✅")
-    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="Approve All", style=discord.ButtonStyle.success, emoji="✅")
+    async def approve(self, interaction: discord.Interaction, _: discord.ui.Button):
         if not self._is_authorized(interaction):
             await interaction.response.send_message(
                 "❌ Only the admin who opened this list can approve requests.",
@@ -1288,70 +1611,138 @@ class ReviewLeaveRequestsView(discord.ui.View):
             )
             return
 
-        if not await self._ensure_selection(interaction):
-            return
+        await interaction.response.defer(ephemeral=True)
 
         try:
             admin_user = await UserModel.get_user_by_discord_id(interaction.user.id)
             if not admin_user:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "❌ Unable to find your admin record in the system.",
                     ephemeral=True
                 )
                 return
 
-            request = await LeaveRequestModel.get_leave_request(self.selected_request_id)
-            if not request:
-                await interaction.response.send_message(
-                    "❌ Leave request not found. Try refreshing with the command again.",
-                    ephemeral=True
-                )
-                return
+            approved_count = 0
+            failed_count = 0
+            already_processed = 0
+            approved_ids = []
+            failed_ids = []
 
-            if request['status'] != 'pending':
-                await interaction.response.send_message(
-                    f"ℹ️ Request #{self.selected_request_id} is already {request['status']}.",
-                    ephemeral=True
-                )
-                return
+            # Process each selected request
+            for request_id in self.selected_request_ids:
+                request = await LeaveRequestModel.get_leave_request(request_id)
+                if not request:
+                    failed_count += 1
+                    failed_ids.append(request_id)
+                    continue
 
-            success = await LeaveRequestModel.approve_leave_request(
-                self.selected_request_id,
-                admin_user['user_id']
+                if request['status'] != 'pending':
+                    already_processed += 1
+                    continue
+
+                success = await LeaveRequestModel.approve_leave_request(
+                    request_id,
+                    admin_user['user_id']
+                )
+
+                if success:
+                    # Handle paid leave deductions
+                    if request['leave_type'] == 'paid_leave':
+                        start_date = request['start_date']
+                        end_date = request['end_date']
+                        if isinstance(start_date, datetime):
+                            start_date = start_date.date()
+                        if isinstance(end_date, datetime):
+                            end_date = end_date.date()
+                        duration_days = (end_date - start_date).days + 1
+                        await LeaveRequestModel.deduct_pending_leave(
+                            request['user_id'],
+                            max(duration_days, 1)
+                        )
+                    elif request['leave_type'] == 'half_day_paid':
+                        # Deduct 0.5 day for paid half-day leave
+                        await LeaveRequestModel.deduct_pending_leave(
+                            request['user_id'],
+                            0.5
+                        )
+
+                    approved_count += 1
+                    approved_ids.append(request_id)
+                else:
+                    failed_count += 1
+                    failed_ids.append(request_id)
+
+            # Create enhanced summary embed
+            embed = discord.Embed(
+                title="✅ Bulk Approval Completed!",
+                description="🎉 **Leave request approval process has been completed!**",
+                color=0x00FF00 if approved_count > 0 else 0xFFA500  # Green if any approved, orange otherwise
             )
 
-            if success:
-                if request['leave_type'] == 'paid_leave':
-                    start_date = request['start_date']
-                    end_date = request['end_date']
-                    if isinstance(start_date, datetime):
-                        start_date = start_date.date()
-                    if isinstance(end_date, datetime):
-                        end_date = end_date.date()
-                    duration_days = (end_date - start_date).days + 1
-                    await LeaveRequestModel.deduct_pending_leave(
-                        request['user_id'],
-                        max(duration_days, 1)
-                    )
+            # Add visual separator
+            embed.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━", inline=False)
 
-                await interaction.response.send_message(
-                    f"✅ Approved leave request #{self.selected_request_id}.",
-                    ephemeral=True
+            # Summary statistics
+            embed.add_field(
+                name="📊 Total Selected",
+                value=f"```yaml\n{len(self.selected_request_ids)}\n```",
+                inline=True
+            )
+            embed.add_field(
+                name="✅ Approved",
+                value=f"```diff\n+ {approved_count}\n```",
+                inline=True
+            )
+            embed.add_field(
+                name="❌ Failed/Skipped",
+                value=f"```md\n{failed_count + already_processed}\n```",
+                inline=True
+            )
+
+            # Add separator
+            embed.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━", inline=False)
+
+            # Detailed breakdown
+            details = []
+            if approved_count > 0:
+                approved_ids_str = ', '.join([f'#{id}' for id in approved_ids])
+                details.append(f"**✅ Approved ({approved_count}):**\n```yaml\n{approved_ids_str}\n```")
+
+            if already_processed > 0:
+                details.append(f"**ℹ️ Already Processed:** {already_processed} request(s)")
+
+            if failed_count > 0:
+                failed_ids_str = ', '.join([f'#{id}' for id in failed_ids])
+                details.append(f"**❌ Failed ({failed_count}):**\n```diff\n- {failed_ids_str}\n```")
+
+            if details:
+                embed.add_field(
+                    name="📋 Detailed Breakdown",
+                    value="\n\n".join(details),
+                    inline=False
                 )
-                self.stop()
-            else:
-                await interaction.response.send_message(
-                    "❌ Failed to approve request. Please try again.",
-                    ephemeral=True
-                )
+
+            # Add footer with timestamp
+            embed.set_footer(
+                text=f"✨ Processed by {interaction.user.name}",
+                icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else None
+            )
+            embed.timestamp = datetime.now(pytz.UTC)
+
+            # Add thumbnail
+            embed.set_thumbnail(url="https://em-content.zobj.net/thumbs/120/twitter/348/check-mark-button_2705.png")
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            self.stop()
+
         except Exception as e:
-            await interaction.response.send_message(
-                f"❌ Error approving request: {e}",
+            await interaction.followup.send(
+                f"❌ Error approving requests: {e}",
                 ephemeral=True
             )
 
-    @discord.ui.button(label="Reject", style=discord.ButtonStyle.danger, emoji="🛑")
-    async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="Reject All", style=discord.ButtonStyle.danger, emoji="🛑")
+    async def reject(self, interaction: discord.Interaction, _: discord.ui.Button):
         if not self._is_authorized(interaction):
             await interaction.response.send_message(
                 "❌ Only the admin who opened this list can reject requests.",
@@ -1359,24 +1750,21 @@ class ReviewLeaveRequestsView(discord.ui.View):
             )
             return
 
-        if not await self._ensure_selection(interaction):
-            return
-
         modal = RejectLeaveModal(self)
         await interaction.response.send_modal(modal)
 
 
-class RejectLeaveModal(discord.ui.Modal, title="Reject Leave Request"):
-    """Modal to capture rejection reason"""
+class RejectLeaveModal(discord.ui.Modal, title="Reject Leave Request(s)"):
+    """Modal to capture rejection reason for bulk rejection"""
     reason = discord.ui.TextInput(
         label="Rejection Reason",
-        placeholder="Provide a short reason",
+        placeholder="Provide a short reason for all selected requests",
         required=True,
         max_length=200,
         style=discord.TextStyle.paragraph
     )
 
-    def __init__(self, parent_view: ReviewLeaveRequestsView):
+    def __init__(self, parent_view: ReviewLeaveRequestsActionView):
         super().__init__(timeout=180)
         self.parent_view = parent_view
 
@@ -1388,48 +1776,121 @@ class RejectLeaveModal(discord.ui.Modal, title="Reject Leave Request"):
             )
             return
 
-        request_id = self.parent_view.selected_request_id
-        if not request_id:
+        request_ids = self.parent_view.selected_request_ids
+        if not request_ids:
             await interaction.response.send_message(
-                "❌ No request selected. Please select a request and try again.",
+                "❌ No requests selected. Please select request(s) and try again.",
                 ephemeral=True
             )
             return
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
-            request = await LeaveRequestModel.get_leave_request(request_id)
-            if not request:
-                await interaction.response.send_message(
-                    "❌ Leave request not found. Try refreshing with the command again.",
-                    ephemeral=True
-                )
-                return
+            rejected_count = 0
+            failed_count = 0
+            already_processed = 0
 
-            if request['status'] != 'pending':
-                await interaction.response.send_message(
-                    f"ℹ️ Request #{request_id} is already {request['status']}.",
-                    ephemeral=True
-                )
-                return
+            rejected_ids = []
+            failed_ids = []
+            already_processed_ids = []
 
-            success = await LeaveRequestModel.reject_leave_request(
-                request_id,
-                self.reason.value
+            for request_id in request_ids:
+                try:
+                    request = await LeaveRequestModel.get_leave_request(request_id)
+                    if not request:
+                        failed_count += 1
+                        failed_ids.append(request_id)
+                        continue
+
+                    if request['status'] != 'pending':
+                        already_processed += 1
+                        already_processed_ids.append(request_id)
+                        continue
+
+                    success = await LeaveRequestModel.reject_leave_request(
+                        request_id,
+                        self.reason.value
+                    )
+
+                    if success:
+                        rejected_count += 1
+                        rejected_ids.append(request_id)
+                    else:
+                        failed_count += 1
+                        failed_ids.append(request_id)
+
+                except Exception as e:
+                    failed_count += 1
+                    failed_ids.append(request_id)
+
+            # Create enhanced summary embed
+            embed = discord.Embed(
+                title="🛑 Bulk Rejection Completed!",
+                description="📋 **Leave request rejection process has been completed!**",
+                color=0xFF0000 if rejected_count > 0 else 0xFFA500  # Red if any rejected, orange otherwise
             )
 
-            if success:
-                await interaction.response.send_message(
-                    f"🛑 Rejected leave request #{request_id}.",
-                    ephemeral=True
+            # Add visual separator
+            embed.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━", inline=False)
+
+            # Summary statistics
+            embed.add_field(
+                name="📊 Total Selected",
+                value=f"```yaml\n{len(request_ids)}\n```",
+                inline=True
+            )
+            embed.add_field(
+                name="🛑 Rejected",
+                value=f"```diff\n- {rejected_count}\n```",
+                inline=True
+            )
+            embed.add_field(
+                name="❌ Failed/Skipped",
+                value=f"```md\n{failed_count + already_processed}\n```",
+                inline=True
+            )
+
+            # Add separator
+            embed.add_field(name="\u200b", value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━", inline=False)
+
+            # Detailed breakdown
+            details = []
+            if rejected_count > 0:
+                rejected_ids_str = ', '.join([f'#{id}' for id in rejected_ids])
+                details.append(f"**🛑 Rejected ({rejected_count}):**\n```diff\n- {rejected_ids_str}\n```")
+                details.append(f"**📝 Reason:** {self.reason.value}")
+
+            if already_processed > 0:
+                already_processed_ids_str = ', '.join([f'#{id}' for id in already_processed_ids])
+                details.append(f"**ℹ️ Already Processed ({already_processed}):**\n```yaml\n{already_processed_ids_str}\n```")
+
+            if failed_count > 0:
+                failed_ids_str = ', '.join([f'#{id}' for id in failed_ids])
+                details.append(f"**❌ Failed ({failed_count}):**\n```css\n{failed_ids_str}\n```")
+
+            if details:
+                embed.add_field(
+                    name="📋 Detailed Breakdown",
+                    value="\n\n".join(details),
+                    inline=False
                 )
-                self.parent_view.stop()
-            else:
-                await interaction.response.send_message(
-                    "❌ Failed to reject request. Please try again.",
-                    ephemeral=True
-                )
+
+            # Add footer with timestamp
+            embed.set_footer(
+                text=f"✨ Processed by {interaction.user.name}",
+                icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else None
+            )
+            embed.timestamp = datetime.now(pytz.UTC)
+
+            # Add thumbnail (stop sign emoji)
+            embed.set_thumbnail(url="https://em-content.zobj.net/thumbs/120/twitter/348/stop-sign_1f6d1.png")
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            self.parent_view.stop()
+
         except Exception as e:
-            await interaction.response.send_message(
-                f"❌ Error rejecting request: {e}",
+            await interaction.followup.send(
+                f"❌ Error rejecting requests: {e}",
                 ephemeral=True
             )

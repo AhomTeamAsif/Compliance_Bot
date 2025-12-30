@@ -5,6 +5,7 @@ from datetime import datetime, date
 from models.compliance_rating_model import ComplianceRatingModel
 from models.user_model import UserModel
 from utils.verification_helper import is_admin, is_super_admin
+from views.compliance_rating_views import EmployeeSelectView
 import pytz
 
 
@@ -14,177 +15,42 @@ class ComplianceRating(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    # ==================== GIVE RATING ====================
+    # ==================== GIVE RATING (NEW MODAL-BASED) ====================
     @app_commands.command(
         name="rate_employee",
         description="Rate an employee on compliance, task submission, and overall performance (ADMIN+)"
     )
-    @app_commands.describe(
-        user="The employee to rate",
-        rating_date="Date for the rating (defaults to today)",
-        compliance_rule_breaks="Number of compliance rule breaks",
-        task_submission_rating="Task submission rating (0-10)",
-        task_submission_feedback="Feedback for task submission rating",
-        overall_performance_rating="Overall performance rating (0-10)",
-        overall_performance_feedback="Feedback for overall performance rating"
-    )
-    async def rate_employee(
-        self,
-        interaction: discord.Interaction,
-        user: discord.User,
-        compliance_rule_breaks: int,
-        task_submission_rating: int,
-        task_submission_feedback: str,
-        overall_performance_rating: int,
-        overall_performance_feedback: str,
-        rating_date: str = None
-    ):
-        """Rate an employee"""
-        
-        await interaction.response.defer(ephemeral=True)
+    async def rate_employee(self, interaction: discord.Interaction):
+        """Rate an employee using an intuitive modal interface"""
         
         # Check if admin or super admin
         if not (await is_admin(interaction.user.id) or await is_super_admin(interaction.user.id)):
-            await interaction.followup.send(
-                "❌ Only ADMIN or SUPER ADMIN can rate employees!",
+            await interaction.response.send_message(
+                "❌ Only **ADMIN** or **SUPER ADMIN** can rate employees!",
                 ephemeral=True
             )
             return
         
-        try:
-            # Validate ratings
-            if task_submission_rating < 0 or task_submission_rating > 10:
-                await interaction.followup.send(
-                    "❌ Task submission rating must be between 0 and 10!",
-                    ephemeral=True
-                )
-                return
-            
-            if overall_performance_rating < 0 or overall_performance_rating > 10:
-                await interaction.followup.send(
-                    "❌ Overall performance rating must be between 0 and 10!",
-                    ephemeral=True
-                )
-                return
-            
-            if compliance_rule_breaks < 0:
-                await interaction.followup.send(
-                    "❌ Compliance rule breaks cannot be negative!",
-                    ephemeral=True
-                )
-                return
-            
-            # Get employee user data
-            employee_data = await UserModel.get_user_by_discord_id(user.id)
-            
-            if not employee_data:
-                await interaction.followup.send(
-                    f"❌ {user.mention} is not registered in the system!",
-                    ephemeral=True
-                )
-                return
-            
-            # Get rater user data
-            rater_data = await UserModel.get_user_by_discord_id(interaction.user.id)
-            
-            if not rater_data:
-                await interaction.followup.send(
-                    "❌ You are not registered in the system!",
-                    ephemeral=True
-                )
-                return
-            
-            # Parse rating date or use today
-            if rating_date:
-                try:
-                    rating_date_obj = datetime.strptime(rating_date, '%d/%m/%Y').date()
-                except ValueError:
-                    await interaction.followup.send(
-                        "❌ Invalid date format! Please use DD/MM/YYYY format.",
-                        ephemeral=True
-                    )
-                    return
-            else:
-                rating_date_obj = datetime.now(pytz.utc).date()
-            
-            # Check if rating already exists for this date
-            existing_rating = await ComplianceRatingModel.get_rating_by_date(
-                employee_data['user_id'],
-                rating_date_obj
-            )
-            
-            if existing_rating:
-                await interaction.followup.send(
-                    f"⚠️ A rating already exists for {user.mention} on {rating_date_obj.strftime('%d/%m/%Y')}.\n"
-                    f"Please use a different date or update the existing rating.",
-                    ephemeral=True
-                )
-                return
-            
-            # Create rating
-            rating_id = await ComplianceRatingModel.create_rating(
-                user_id=employee_data['user_id'],
-                rated_by_user_id=rater_data['user_id'],
-                rating_date=rating_date_obj,
-                compliance_rule_breaks=compliance_rule_breaks,
-                task_submission_rating=task_submission_rating,
-                task_submission_feedback=task_submission_feedback,
-                overall_performance_rating=overall_performance_rating,
-                overall_performance_feedback=overall_performance_feedback
-            )
-            
-            # Create success embed
-            embed = discord.Embed(
-                title="✅ Compliance Rating Recorded",
-                description=f"Rating successfully recorded for {user.mention}",
-                color=discord.Color.green()
-            )
-            
-            embed.add_field(
-                name="📅 Rating Date",
-                value=rating_date_obj.strftime('%d/%m/%Y'),
-                inline=True
-            )
-            embed.add_field(
-                name="⚠️ Compliance Rule Breaks",
-                value=str(compliance_rule_breaks),
-                inline=True
-            )
-            embed.add_field(
-                name="📋 Task Submission Rating",
-                value=f"{task_submission_rating}/10",
-                inline=True
-            )
-            embed.add_field(
-                name="📝 Task Submission Feedback",
-                value=task_submission_feedback[:500] + ("..." if len(task_submission_feedback) > 500 else ""),
-                inline=False
-            )
-            embed.add_field(
-                name="⭐ Overall Performance Rating",
-                value=f"{overall_performance_rating}/10",
-                inline=True
-            )
-            embed.add_field(
-                name="💬 Overall Performance Feedback",
-                value=overall_performance_feedback[:500] + ("..." if len(overall_performance_feedback) > 500 else ""),
-                inline=False
-            )
-            embed.add_field(
-                name="👤 Rated By",
-                value=interaction.user.mention,
-                inline=True
-            )
-            
-            embed.set_footer(text=f"Rating ID: {rating_id}")
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            
-        except Exception as e:
-            await interaction.followup.send(
-                f"❌ An error occurred: {str(e)}",
-                ephemeral=True
-            )
+        # Show employee selection view
+        view = EmployeeSelectView()
+        
+        embed = discord.Embed(
+            title="📊 Employee Rating - Step 1/3",
+            description="**Select the employee** you want to rate:",
+            color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="ℹ️ Rating Categories",
+            value=(
+                "• **Compliance Rule Breaks** - Track policy violations\n"
+                "• **Task Submission Rating** - Quality and timeliness (0-10)\n"
+                "• **Overall Performance** - Holistic evaluation (0-10)"
+            ),
+            inline=False
+        )
+        embed.set_footer(text="This new interface makes rating employees quick and easy!")
+        
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
     # ==================== VIEW COMPLIANCE RATINGS ====================
     @app_commands.command(
@@ -355,4 +221,3 @@ class ComplianceRating(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(ComplianceRating(bot))
-
