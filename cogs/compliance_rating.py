@@ -5,23 +5,23 @@ from datetime import datetime, date
 from models.compliance_rating_model import ComplianceRatingModel
 from models.user_model import UserModel
 from utils.verification_helper import is_admin, is_super_admin
-from views.compliance_rating_views import EmployeeSelectView
+from views.compliance_rating_views import EmployeeSelectView, ViewRatingsSelectView
 import pytz
 
 
 class ComplianceRating(commands.Cog):
-    """Commands for managing compliance ratings"""
+    """Commands for managing compliance ratings with simple additional fields"""
     
     def __init__(self, bot):
         self.bot = bot
     
-    # ==================== GIVE RATING (NEW MODAL-BASED) ====================
+    # ==================== GIVE RATING (SIMPLE DYNAMIC) ====================
     @app_commands.command(
         name="rate_employee",
-        description="Rate an employee on compliance, task submission, and overall performance (ADMIN+)"
+        description="Rate an employee with fixed fields + optional additional fields (ADMIN+)"
     )
     async def rate_employee(self, interaction: discord.Interaction):
-        """Rate an employee using an intuitive modal interface"""
+        """Rate an employee using intuitive modal interface with simple additional fields"""
         
         # Check if admin or super admin
         if not (await is_admin(interaction.user.id) or await is_super_admin(interaction.user.id)):
@@ -40,7 +40,7 @@ class ComplianceRating(commands.Cog):
             color=discord.Color.blue()
         )
         embed.add_field(
-            name="ℹ️ Rating Categories",
+            name="📋 Fixed Rating Categories",
             value=(
                 "• **Compliance Rule Breaks** - Track policy violations\n"
                 "• **Task Submission Rating** - Quality and timeliness (0-10)\n"
@@ -48,7 +48,19 @@ class ComplianceRating(commands.Cog):
             ),
             inline=False
         )
-        embed.set_footer(text="This new interface makes rating employees quick and easy!")
+        embed.add_field(
+            name="✨ Additional Fields (Optional)",
+            value=(
+                "You can add any custom fields in the format:\n"
+                "`field_name: value, field_name2: value2`\n\n"
+                "**Examples:**\n"
+                "• `presentation_skill: Excellent presenter`\n"
+                "• `code_quality: Very clean, team_work: Great`\n"
+                "• `morning_meetings: Participates well`"
+            ),
+            inline=False
+        )
+        embed.set_footer(text="Simple & flexible - add any fields you need!")
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
@@ -125,9 +137,18 @@ class ComplianceRating(commands.Cog):
                     f"**Rated By:** {rating['rated_by_name']}"
                 )
                 
+                # Add additional fields if present
+                if rating.get('custom_ratings') and isinstance(rating['custom_ratings'], dict):
+                    if rating['custom_ratings']:  # Check if not empty
+                        field_value += "\n\n**📊 Additional Feedback**\n"
+                        for key, value in rating['custom_ratings'].items():
+                            # Make key readable
+                            readable_key = key.replace('_', ' ').title()
+                            field_value += f"• **{readable_key}:** {value}\n"
+                
                 embed.add_field(
                     name=f"📅 {date_display}",
-                    value=field_value,
+                    value=field_value[:1024],
                     inline=False
                 )
             
@@ -202,9 +223,24 @@ class ComplianceRating(commands.Cog):
                     f"**Rated By:** {rating['rated_by_name']}"
                 )
                 
+                # Add additional fields if present
+                if rating.get('custom_ratings') and isinstance(rating['custom_ratings'], dict):
+                    if rating['custom_ratings']:  # Check if not empty
+                        field_value += "\n\n**📊 Additional:**\n"
+                        # Show first 2 additional fields
+                        count = 0
+                        for key, value in rating['custom_ratings'].items():
+                            if count >= 2:
+                                remaining = len(rating['custom_ratings']) - 2
+                                field_value += f"• ... and {remaining} more\n"
+                                break
+                            readable_key = key.replace('_', ' ').title()
+                            field_value += f"• {readable_key}: {value}\n"
+                            count += 1
+                
                 embed.add_field(
                     name=f"👤 {rating['user_name']}",
-                    value=field_value,
+                    value=field_value[:1024],
                     inline=True
                 )
             
@@ -217,6 +253,43 @@ class ComplianceRating(commands.Cog):
                 f"❌ An error occurred: {str(e)}",
                 ephemeral=True
             )
+
+    # ==================== VIEW RATINGS (FLEXIBLE) ====================
+    @app_commands.command(
+        name="view_ratings",
+        description="View compliance ratings for selected employees in a date range (ADMIN+)"
+    )
+    async def view_ratings(self, interaction: discord.Interaction):
+        """View ratings for multiple employees with flexible date range selection"""
+
+        # Check if admin or super admin
+        if not (await is_admin(interaction.user.id) or await is_super_admin(interaction.user.id)):
+            await interaction.response.send_message(
+                "❌ Only **ADMIN** or **SUPER ADMIN** can view compliance ratings!",
+                ephemeral=True
+            )
+            return
+
+        # Show employee selection view
+        view = ViewRatingsSelectView()
+
+        embed = discord.Embed(
+            title="📊 View Compliance Ratings",
+            description="**Select employees** whose ratings you want to view:",
+            color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="📋 Next Steps",
+            value=(
+                "1️⃣ Select one or more employees\n"
+                "2️⃣ Choose date range (or view all)\n"
+                "3️⃣ View detailed ratings"
+            ),
+            inline=False
+        )
+        embed.set_footer(text="You can select multiple employees at once!")
+
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 async def setup(bot):

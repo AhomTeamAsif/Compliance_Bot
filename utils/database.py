@@ -1,5 +1,8 @@
 import asyncpg
 from config import Config
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Database:
     def __init__(self):
@@ -16,13 +19,13 @@ class Database:
             min_size=5,
             max_size=20
         )
-        print("✅ Database connected")
+        logger.info("Database connected")
     
     async def disconnect(self):
         """Close database connection pool"""
         if self.pool:
             await self.pool.close()
-            print("❌ Database disconnected")
+            logger.info("Database disconnected")
     
     async def execute_sql_file(self, filepath: str):
         """Execute SQL file to create tables"""
@@ -33,9 +36,9 @@ class Database:
             async with self.pool.acquire() as conn:
                 await conn.execute(sql)
             
-            print(f"✅ Executed SQL file: {filepath}")
+            logger.info(f"Executed SQL file: {filepath}")
         except Exception as e:
-            print(f"❌ Failed to execute SQL file: {e}")
+            logger.error(f"Failed to execute SQL file: {e}")
             raise
 
 # Global database instance
