@@ -189,7 +189,7 @@ class UserManagement(commands.Cog):
                 embed.add_field(name="📊 Trackabi ID", value=f"`{user_data['trackabi_id']}`" if user_data['trackabi_id'] else "N/A", inline=True)
                 embed.add_field(name="🖥️ Desklog ID", value=f"`{user_data['desklog_id']}`" if user_data['desklog_id'] else "N/A", inline=True)
                 embed.add_field(name="🏖️ Pending Leaves", value=f"{user_data['pending_leaves']} days", inline=True)
-                embed.add_field(name="🗓️ Contract Start", value=user_data['contract_started_at'].strftime('%Y-%m-%d') if user_data['contract_started_at'] else "N/A", inline=True)
+                embed.add_field(name="🗓️ Contract Start", value=user_data['contract_started_at'].strftime('%d/%m/%Y') if user_data['contract_started_at'] else "N/A", inline=True)
                 
                 # Registered by info
                 if registered_by_info:
@@ -273,7 +273,7 @@ class UserManagement(commands.Cog):
             embed.add_field(name="📊 Trackabi ID", value=f"`{user_data['trackabi_id']}`" if user_data['trackabi_id'] else "N/A", inline=True)
             embed.add_field(name="🖥️ Desklog ID", value=f"`{user_data['desklog_id']}`" if user_data['desklog_id'] else "N/A", inline=True)
             embed.add_field(name="🏖️ Pending Leaves", value=f"{user_data['pending_leaves']} days", inline=True)
-            embed.add_field(name="🗓️ Contract Start", value=user_data['contract_started_at'].strftime('%Y-%m-%d') if user_data['contract_started_at'] else "N/A", inline=True)
+            embed.add_field(name="🗓️ Contract Start", value=user_data['contract_started_at'].strftime('%d/%m/%Y') if user_data['contract_started_at'] else "N/A", inline=True)
             
             # Registered by info
             if registered_by_info:

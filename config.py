@@ -10,6 +10,11 @@ class Config:
     VOICE_CHANNEL_ID = int(os.getenv('VOICE_CHANNEL_ID', 0))
     APPLICATION_ID = int(os.getenv('APPLICATION_ID', 0)) if os.getenv('APPLICATION_ID') else None
     
+    # Sick Leave Config
+    SICK_LEAVE_ANCHOR_HOUR = int(os.getenv('SICK_LEAVE_ANCHOR_HOUR', 10))  # e.g., 10 AM
+    SICK_LEAVE_EARLY_HOURS = int(os.getenv('SICK_LEAVE_EARLY_HOURS', 12))  # window start hours before anchor
+    SICK_LEAVE_LATE_HOURS = int(os.getenv('SICK_LEAVE_LATE_HOURS', 2))     # window end hours before anchor
+    
     # Database Config
     DB_HOST = os.getenv('DB_HOST', 'localhost')
     DB_PORT = int(os.getenv('DB_PORT', 5432))

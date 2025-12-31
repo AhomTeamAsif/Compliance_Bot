@@ -13,7 +13,7 @@ DROP TABLE IF EXISTS activity_logs CASCADE;
 "
 
 
-
+                            -- Delete THIS BEOFORE PUSHING TO GITHUB
 
 Check the whole codebase and tell me what you have understood?
 
@@ -31,3 +31,6 @@ Bot saves file URL/message link to database
 Free, no external storage needed
 
 I want to follow these approach, change db if needed to.
+
+
+so in the case of  "review_leave_requests" command, implement the feature from where admin will be able approve or decline employee's leave request.

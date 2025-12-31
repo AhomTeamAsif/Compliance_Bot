@@ -158,7 +158,7 @@ class ContinueToModal2View(discord.ui.View):
 
 class UserRegistrationModal2(discord.ui.Modal, title='User Registration - Part 2/3'):
     contract_date = discord.ui.TextInput(
-        label='Contract Starting Date', placeholder='YYYY-MM-DD (e.g., 2024-01-15)',
+        label='Contract Starting Date', placeholder='DD/MM/YYYY (e.g., 15/01/2024)',
         required=True, max_length=10, style=discord.TextStyle.short
     )
     
@@ -173,13 +173,13 @@ class UserRegistrationModal2(discord.ui.Modal, title='User Registration - Part 2
         self.trackabi_id = trackabi_id
         self.desklog_id = desklog_id
         self.pending_leaves = pending_leaves
-        self.contract_date.default = datetime.now().strftime('%Y-%m-%d')
+        self.contract_date.default = datetime.now().strftime('%d/%m/%Y')
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            contract_started_at = datetime.strptime(self.contract_date.value, '%Y-%m-%d')
+            contract_started_at = datetime.strptime(self.contract_date.value, '%d/%m/%Y')
         except ValueError:
-            await interaction.response.send_message("❌ Invalid date format! Please use YYYY-MM-DD", ephemeral=True)
+            await interaction.response.send_message("❌ Invalid date format! Please use DD/MM/YYYY", ephemeral=True)
             return
         
         # Get permissions and show selection
@@ -341,7 +341,7 @@ class PermissionSelectView(discord.ui.View):
                 embed.add_field(name="🏢 Department", value=self.department, inline=True)
                 embed.add_field(name="💼 Position", value=self.position, inline=True)
                 embed.add_field(name="👑 Role", value=role_name, inline=True)
-                embed.add_field(name="🗓️ Contract Start", value=self.contract_started_at.strftime('%Y-%m-%d'), inline=True)
+                embed.add_field(name="🗓️ Contract Start", value=self.contract_started_at.strftime('%d/%m/%Y'), inline=True)
                 embed.add_field(name="🏖️ Pending Leaves", value=f"{self.pending_leaves} days", inline=True)
                 embed.add_field(name="🔑 Permissions", value=f"{len(self.selected_permissions)} granted", inline=True)
                 embed.add_field(name="📊 Trackabi ID", value=f"`{self.trackabi_id}`", inline=True)

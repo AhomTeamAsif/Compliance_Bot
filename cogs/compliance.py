@@ -290,7 +290,7 @@ class Compliance(commands.Cog):
         
         for record in history:
             # Format date
-            date_str = record['recorded_at'].strftime("%Y-%m-%d %H:%M")
+            date_str = record['recorded_at'].strftime("%d/%m/%Y %H:%M")
             
             # Build compliance status
             field_value = (

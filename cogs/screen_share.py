@@ -33,17 +33,23 @@ class ScreenShare(commands.Cog):
         
         try:
             # Check if user already has an active session
-            active_session = await ScreenShareModel.get_active_session(user['user_id'])
+            active_session = await ScreenShareModel.get_active_session_by_user(user['user_id'])
             if active_session:
                 await interaction.followup.send(
                     "⚠️ You already have an active screen share session!",
                     ephemeral=True
                 )
                 return
-            
+
+            # Get or create time tracking session (you may need to adjust this based on your requirements)
+            # For now, we'll pass 0 or None as a placeholder
+            # You should integrate this with your actual time tracking system
+            time_tracking_id = 0  # Placeholder - adjust based on your time tracking logic
+
             # Start new session
             session_id = await ScreenShareModel.start_session(
                 user_id=user['user_id'],
+                time_tracking_id=time_tracking_id,
                 reason=reason
             )
             
@@ -100,27 +106,37 @@ class ScreenShare(commands.Cog):
         try:
             # Get user from database
             user = await UserModel.get_user_by_discord_id(interaction.user.id)
-            
+
             if not user:
                 await interaction.followup.send(
                     "❌ User not found in database!",
                     ephemeral=True
                 )
                 return
-            
-            # End the session
-            session_id = await ScreenShareModel.end_session(
-                user_id=user['user_id'],
-                reason=reason
-            )
-            
-            if not session_id:
+
+            # Get active session for the user
+            active_session = await ScreenShareModel.get_active_session_by_user(user['user_id'])
+
+            if not active_session:
                 await interaction.followup.send(
                     "⚠️ No active screen share session found!",
                     ephemeral=True
                 )
                 return
-            
+
+            # End the session
+            session_id = await ScreenShareModel.end_session(
+                session_id=active_session['session_id'],
+                reason=reason
+            )
+
+            if not session_id:
+                await interaction.followup.send(
+                    "⚠️ Failed to end session!",
+                    ephemeral=True
+                )
+                return
+
             # Get session details
             session = await ScreenShareModel.get_session_by_id(session_id)
 
@@ -305,7 +321,7 @@ class ScreenShare(commands.Cog):
             
             for session in sessions:
                 # Format timestamps
-                on_time = session['screen_share_on_time'].strftime("%Y-%m-%d %H:%M")
+                on_time = session['screen_share_on_time'].strftime("%d/%m/%Y %H:%M")
                 off_time = session['screen_share_off_time'].strftime("%H:%M") if session['screen_share_off_time'] else "Ongoing"
                 
                 status = "🟢 Active" if session['screen_share_off_time'] is None else "⚫ Ended"
